@@ -133,6 +133,8 @@ Right-click, **Run Once**. Each name is looked up in Index URL and then goes thr
 
 ## Install
 
+To build both flows in the NiFi UI step by step, with screenshots, follow [Build the PyPI transfer by hand](docs/runbooks/pypi-transfer-build-by-hand.md).
+
 Copy the whole `python/python-packages` directory into NiFi's Python extensions directory on every node, then restart NiFi: it discovers Python processors at start. For containers, build `python/Containerfile` and copy `/extensions/python-packages` from an init container, as the container-registry processors do (`infra/nifi-python-extensions`).
 
 ## Test
