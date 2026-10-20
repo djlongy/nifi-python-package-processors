@@ -129,7 +129,7 @@ The pipeline resends with `MIRROR_RESEND_PACKAGES`. From NiFi, without the pipel
 | dynamic `X-Artifact-Type` | `python-packages-request` |
 | dynamic `X-Artifact-Format` | `text` |
 
-Right-click, **Run Once**. Each name is looked up in Index URL and then goes through the same allowlist, fetch and SHA-256 checks as a request from the pipeline.
+Right-click, **Run Once**. Each name is looked up in Index URL and then goes through the same allowlist, fetch and SHA-256 checks as a request from the pipeline. A link the index page gives under Index URL's path is read from Index URL's host, since GitLab writes its `external_url` into the page, which need not be the address NiFi uses.
 
 ## Install
 

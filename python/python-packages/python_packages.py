@@ -146,6 +146,16 @@ def check_index_url(index_url):
     return index_url.rstrip("/")
 
 
+def same_origin(link, index_url):
+    """A link under the index's own path, on the index's scheme and host. GitLab writes its external_url into
+    the simple page, which need not be the address NiFi reaches it on, so the allowlist would refuse every link.
+    A link elsewhere is returned as it is, for the allowlist to refuse."""
+    target, index = urllib.parse.urlsplit(link), urllib.parse.urlsplit(index_url)
+    if target.path.startswith(index.path.rstrip("/") + "/"):
+        return urllib.parse.urlunsplit((index.scheme, index.netloc, target.path, target.query, ""))
+    return link
+
+
 def index_lookup(index_url, username="", password="", timeout=60, opener=None):
     """lookup(filename) for text requests: reads <index>/simple/<project>/ (PEP 503, as GitLab, PyPI, pypiserver,
     Artifactory and Nexus serve it) and returns the entry for that file, its sha256 from the link's #sha256=.
@@ -170,6 +180,7 @@ def index_lookup(index_url, username="", password="", timeout=60, opener=None):
             pages[project] = {}
             for href in links.hrefs:
                 target, _, fragment = urllib.parse.urljoin(url, href).partition("#")
+                target = same_origin(target, index_url)
                 pages[project][urllib.parse.unquote(target.rsplit("/", 1)[-1])] = (
                     target, fragment[len("sha256="):] if fragment.startswith("sha256=") else "")
         return pages[project]

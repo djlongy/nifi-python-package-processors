@@ -6,7 +6,8 @@ import types
 import unittest
 
 import nifi_stub  # noqa: F401
-from python_packages import TransferError, check_index_url, index_lookup, trust_context, trusted_der, web_opener
+from python_packages import (TransferError, check_index_url, index_lookup, same_origin, trust_context, trusted_der,
+                             web_opener)
 
 
 class Issuer:
@@ -47,6 +48,15 @@ class IndexUrlTest(unittest.TestCase):
             with self.subTest(url), self.assertRaises(TransferError):
                 check_index_url(url)
         self.assertEqual(check_index_url("https://gitlab.example.com/pypi/"), "https://gitlab.example.com/pypi")
+
+
+class OriginTest(unittest.TestCase):
+    def test_a_link_under_the_index_path_is_read_from_the_index_host(self):
+        index = "https://git.example.com/api/v4/projects/1/packages/pypi"
+        link = "https://git.example.internal/api/v4/projects/1/packages/pypi/files/ab/six-1.17.0-py2.py3-none-any.whl"
+        self.assertEqual(same_origin(link, index), index + "/files/ab/six-1.17.0-py2.py3-none-any.whl")
+        for elsewhere in ("https://evil.example/x.whl", "https://git.example.internal/api/v4/projects/2/packages/pypi/x.whl"):
+            self.assertEqual(same_origin(elsewhere, index), elsewhere)
 
 
 class Redirecting(http.server.BaseHTTPRequestHandler):
