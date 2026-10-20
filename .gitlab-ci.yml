@@ -1,0 +1,15 @@
+---
+stages: [test]
+
+python-test:
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  # A Python 3.12 image from the runner's allowed registry, set as a project CI variable.
+  image: $PYTHON_TEST_IMAGE
+  script:
+    - pip install --no-cache-dir coverage
+    - coverage run --source=python/python-packages -m unittest discover -s python/tests
+    - coverage report
+  coverage: '/^TOTAL.*\s(\d+(?:\.\d+)?)%$/'
