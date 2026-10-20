@@ -32,9 +32,11 @@ RoutePythonTransfer success: auto-terminated (pypi.result uploaded or duplicate)
 every failure and InvokeHTTP Failure -> LogMessage "Rejected (inspect queue)", kept stopped
 ```
 
+On a cluster, or with Concurrent Tasks above 1 on the high RoutePythonTransfer, set **Upload Secret** to a sensitive parameter of 32 or more characters. NiFi may run each node and each concurrent task in its own Python process. Without a shared secret, a wheel that InvokeHTTP answers is read by a process that did not sign it, so it is uploaded again and counts as duplicate.
+
 The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the link), so neither side packs or unpacks. InvokeHTTP retries its own `Retry` relationship. Keep the default back pressure (10000) on every connection in a loop.
 
-Source distributions (`name-version.tar.gz` or `.zip`) cross the same way when gitlab-pypi-mirror sends them (`MIRROR_PUBLISH_SDISTS=true`): the same allowlist and SHA-256 checks, labelled `X-Artifact-Format` `sdist`, and on the high side name and version come from the file name. Anything else, such as `.tar.bz2` or `.egg`, is refused.
+**Accepted Formats** on each RoutePythonTransfer decides which package files that side lets through: `whl` (default), `sdist`, or `whl,sdist`. Source distributions (`name-version.tar.gz` or `.zip`) are what gitlab-pypi-mirror sends with `MIRROR_PUBLISH_SDISTS=true`. Where accepted, they cross like wheels: the same allowlist and SHA-256 checks, labelled `X-Artifact-Format` `sdist`, and on the high side name and version come from the file name. The low side refuses a format before downloading it, and the high side refuses it on arrival, so each side decides for itself. pip builds an sdist when it installs one, running the package's setup code, so accept `sdist` on the high side only where that is wanted. Anything else, such as `.tar.bz2` or `.egg`, is always refused.
 
 ## Relationships
 
@@ -53,7 +55,7 @@ Source distributions (`name-version.tar.gz` or `.zip`) cross the same way when g
 | `pypi.filename`, `pypi.name`, `pypi.version`, `pypi.sha256`, `pypi.size`, `pypi.url` | Route (low) | The job; InvokeHTTP fetches `${pypi.url}`, the high InvokeHTTP posts `${pypi.name}` and `${pypi.version}` |
 | `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl` (or `sdist`), `X-Artifact-Action` `mirror`, `mime.type` | Route (low, after the hash) | The labels the wheel crosses with; route on `X-Artifact-Type` on the high side |
 | `pypi.stage` | Route | `fetch`, `sent`, `upload`: which step a FlowFile is at |
-| `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by a secret only this RoutePythonTransfer holds. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
+| `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by Upload Secret, or when that is empty by a random secret of this Python process. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
 | `pypi.result` | Route (high) | `uploaded` or `duplicate` |
 | `pypi.error` | both | Why a FlowFile went to failure |
 | `pypi.job.count`, `pypi.refused.count` | Plan | Wheels in the request, and how many the allowlist refused |
@@ -86,6 +88,8 @@ The request's own headers (`X-Registry`, `X-CI-Project`, `X-CI-Pipeline-Url`, `X
 | Transfer Side | Yes | `Low` | Low (default): prepares downloads and labels verified wheels. High: checks wheels and reads upload answers. |
 | Upload URL | No | none | High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{high.pypi.url}. An answer from any other URL is refused, so attributes carried across the diode cannot pass as an upload. Environment variables allowed. |
 | Already Uploaded Pattern | Yes | `^(400\|409) .*(already been taken\|already exists\|does not allow updating)` | High side: a regular expression on "<HTTP status> <response body>" (InvokeHTTP Response Body Attribute Name pypi.response) meaning the index already holds the file, so it counts as done. The default covers GitLab, PyPI, pypiserver, Artifactory and Nexus. |
+| Accepted Formats | Yes | `whl` | Package files this side lets through: whl (default) wheels only, sdist source distributions (name-version.tar.gz or .zip) only, or whl,sdist both. Anything else is always refused. Pip builds an sdist on install, running its setup code. |
+| Upload Secret | No | none | High side: 32 or more characters every node and task signs pypi.upload.key with, as a sensitive parameter. Set it on a cluster or with Concurrent Tasks above 1. Empty (default): each Python process makes its own, so a wheel another process sent is uploaded again and counts as duplicate. |
 <!-- /properties -->
 
 ## TLS and private CAs

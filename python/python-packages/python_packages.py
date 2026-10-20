@@ -96,6 +96,16 @@ def package_format(filename):
     return WHEEL_FORMAT if WHEEL.fullmatch(filename) else SDIST_FORMAT if SDIST.fullmatch(filename) else ""
 
 
+ACCEPTED_FORMATS = (WHEEL_FORMAT, SDIST_FORMAT, f"{WHEEL_FORMAT},{SDIST_FORMAT}")
+
+
+def format_refused(filename, accepted):
+    """Why a package file of a format outside accepted (a value of ACCEPTED_FORMATS) may not go on, or ""."""
+    kind = package_format(filename or "")
+    return f"{filename!r} is a {kind}, which Accepted Formats ({accepted}) refuses" if (
+        kind and kind not in accepted.split(",")) else ""
+
+
 class _Links(html.parser.HTMLParser):
     """The <a href> values of a PEP 503 simple page."""
 

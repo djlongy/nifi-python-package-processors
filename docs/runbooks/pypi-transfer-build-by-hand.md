@@ -125,7 +125,7 @@ This splits the small job list, never a wheel.
 
 #### Route wheel (RoutePythonTransfer): 0 properties
 
-All properties stay at their defaults: Transfer Side `Low`, Upload URL empty, Already Uploaded Pattern unchanged (used on the high side only).
+All properties stay at their defaults: Transfer Side `Low`, Upload URL empty, Already Uploaded Pattern unchanged (used on the high side only), Accepted Formats `whl`, Upload Secret empty. Set Accepted Formats to `whl,sdist` only if the mirror sends source distributions (`MIRROR_PUBLISH_SDISTS=true`).
 
 [![RoutePythonTransfer low properties](../images/pypi-route-low-properties.png)](../images/pypi-route-low-properties.png)
 
@@ -306,12 +306,13 @@ Defaults as on the low side, except:
 
 Defaults: Hash Algorithm `SHA-256`, Fail When Content Empty `false`. The high side hashes the wheel again: it trusts the bytes it received, not the low side's word.
 
-#### Route wheel (RoutePythonTransfer): 2 properties
+#### Route wheel (RoutePythonTransfer): 3 properties
 
 | Property | Value |
 |---|---|
 | Transfer Side | `High` |
 | Upload URL | `#{gitlab.high.pypi.url}` |
+| Upload Secret | `#{pypi.upload.secret}`, a sensitive parameter of 32 or more characters (needed on a cluster or with Concurrent Tasks above 1) |
 
 [![RoutePythonTransfer high properties](../images/pypi-route-high-properties.png)](../images/pypi-route-high-properties.png)
 
