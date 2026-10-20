@@ -1,0 +1,16 @@
+{
+ "body": "{\"registry\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi\", \"files\": [{\"filename\": \"six-1.17.0-py2.py3-none-any.whl\", \"name\": \"six\", \"version\": \"1.17.0\", \"sha256\": \"76c1f3b8c6106243a97620b63fb32351efe270f385c1c2257a1cfeb7441ec0b0\", \"size\": 128, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/76c1f3b8c6106243a97620b63fb32351efe270f385c1c2257a1cfeb7441ec0b0/six-1.17.0-py2.py3-none-any.whl\"}, {\"filename\": \"crcmod-1.7-py3-none-any.whl\", \"name\": \"crcmod\", \"version\": \"1.7\", \"sha256\": \"c09fddee60bc61023de5911d11cbd231ef5dc4f9d8f6d270716d7103f34b6fa1\", \"size\": 131, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/c09fddee60bc61023de5911d11cbd231ef5dc4f9d8f6d270716d7103f34b6fa1/crcmod-1.7-py3-none-any.whl\"}]}",
+ "headers": {
+  "Content-Type": "application/json",
+  "Filename": "pypi-request-20261021T000000000Z.json",
+  "X-Artifact-Action": "mirror",
+  "X-Artifact-Format": "json",
+  "X-Artifact-Type": "python-packages-request",
+  "X-CI-Commit-Sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "X-CI-Pipeline-Url": "https://gitlab.example.com/platform/pypi-mirror/-/pipelines/1",
+  "X-CI-Project": "platform/pypi-mirror",
+  "X-File-Count": "2",
+  "X-Registry": "https://gitlab.example.com/api/v4/projects/12/packages/pypi",
+  "X-Sha256": "ac0a7998c9c7f511dfc4f4c8099661cbcd8d29cc27a8afcc1fa15bce999ac1b8"
+ }
+}
