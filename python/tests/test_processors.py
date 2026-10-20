@@ -47,7 +47,8 @@ def plan(flowfile, **values):
 
 class PlanTest(unittest.TestCase):
     def test_one_job_per_wheel_with_every_field(self):
-        result = plan(request([SIX, SIX | {"filename": "click-8.3.0-py3-none-any.whl"}]))
+        click = "click-8.3.0-py3-none-any.whl"
+        result = plan(request([SIX, SIX | {"filename": click, "url": f"{LOW}/files/{'a' * 64}/{click}"}]))
         self.assertEqual(result.relationship, "success")
         jobs = json.loads(result.contents)["jobs"]
         self.assertEqual(jobs[0], {key: str(value) for key, value in SIX.items()})
@@ -208,7 +209,8 @@ class HighRouteTest(unittest.TestCase):
         self.assertEqual(result.relationship, "request")
         self.assertEqual({k: v for k, v in result.attributes.items() if k != "pypi.upload.key"},
                          {"pypi.stage": "upload", "pypi.name": "six", "pypi.version": "1.17.0", "pypi.response": "",
-                          "pypi.filetype": "bdist_wheel", "invokehttp.status.code": "", "invokehttp.request.url": ""})
+                          "pypi.filetype": "bdist_wheel", "pypi.pyversion": "py2.py3", "invokehttp.status.code": "",
+                          "invokehttp.request.url": "", "invokehttp.response.url": ""})
         self.assertEqual(len(result.attributes["pypi.upload.key"]), 64)
 
     def test_a_wheel_that_is_not_one_fails(self):
@@ -245,6 +247,13 @@ class HighRouteTest(unittest.TestCase):
     def test_an_answer_from_another_url_is_not_an_upload(self):
         result = self.uploaded("200", url=SIX["url"])
         self.assertIn("was not uploaded to", result.attributes["pypi.error"])
+
+    def test_an_upload_redirected_elsewhere_is_not_an_upload(self):
+        flowfile = self.arrived()
+        flowfile.attributes |= high(flowfile).attributes
+        flowfile.attributes |= {"invokehttp.request.url": HIGH, "invokehttp.status.code": "200",
+                                "invokehttp.response.url": "https://login.test/sign_in"}
+        self.assertIn("was not uploaded to", high(flowfile).attributes["pypi.error"])
 
     def test_an_upload_stage_carried_across_the_diode_is_checked_and_uploaded_again(self):
         forged = {"pypi.stage": "upload", "invokehttp.request.url": HIGH, "invokehttp.status.code": "201"}
@@ -297,7 +306,7 @@ class SdistTest(unittest.TestCase):
         self.assertIn("is a whl", result.attributes["pypi.error"])
 
     def test_an_sdist_is_planned_fetched_and_labelled_sdist(self):
-        jobs = json.loads(plan(request([PYCRC, PYCRC | {"filename": "pyreadline-2.1.zip"}])).contents)["jobs"]
+        jobs = json.loads(plan(request([PYCRC, PYCRC | {"filename": "pyreadline-2.1.zip", "url": f"{LOW}/files/{'c' * 64}/pyreadline-2.1.zip"}])).contents)["jobs"]
         self.assertFalse([job for job in jobs if "error" in job])
         fetched = {f"pypi.{k}": str(v) for k, v in PYCRC.items()} | {
             "pypi.stage": "fetch", "content_SHA-256": PYCRC["sha256"], "invokehttp.request.url": PYCRC["url"]}
@@ -311,7 +320,8 @@ class SdistTest(unittest.TestCase):
         result = high(FlowFile(b"sdist", **arrived), **BOTH)
         self.assertEqual(result.relationship, "request")
         self.assertEqual((result.attributes["pypi.name"], result.attributes["pypi.version"],
-                          result.attributes["pypi.filetype"]), ("pycrc16", "0.1.2", "sdist"))
+                          result.attributes["pypi.filetype"], result.attributes["pypi.pyversion"]),
+                         ("pycrc16", "0.1.2", "sdist", "source"))
 
     def test_a_label_that_does_not_match_the_file_is_refused(self):
         for filename, kind in ((PYCRC["filename"], "whl"), (SIX["filename"], "sdist"), ("pycrc16-0.1.2.tar.bz2", "sdist")):
@@ -319,6 +329,34 @@ class SdistTest(unittest.TestCase):
                 arrived = {"filename": filename, "X-Sha256": "c" * 64, "content_SHA-256": "c" * 64,
                            "X-Artifact-Type": "python-packages", "X-Artifact-Format": kind}
                 self.assertEqual(high(FlowFile(b"x", **arrived), **BOTH).relationship, "failure")
+
+
+class ReviewFixTest(unittest.TestCase):
+    def test_a_job_whose_url_names_another_file_is_refused(self):
+        evil = SIX | {"url": f"{LOW}/files/{'a' * 64}/evil-9.9.9-py3-none-any.whl"}
+        jobs = json.loads(plan(request([evil])).contents)["jobs"]
+        self.assertIn("is not the file its url names", jobs[0]["error"])
+
+    def test_too_many_names_are_refused_before_any_lookup(self):
+        def lookup(name):
+            raise AssertionError("looked up")
+        body = "\n".join(f"p{i}-1.0-py3-none-any.whl" for i in range(3)).encode()
+        with self.assertRaisesRegex(python_packages.TransferError, "more than Maximum Files"):
+            python_packages.plan_jobs(body, {"X-Artifact-Type": "python-packages-request", "X-Artifact-Format": "text"},
+                                      f"{LOW}/files/", 2, lookup)
+
+    def test_a_name_that_is_not_a_pep_427_wheel_is_refused_on_arrival(self):
+        for filename in ("a.whl", "requests-2.31.0-py3-none-any-extra.whl", "foo-1.0-1-extra-py3-none-any.whl"):
+            with self.subTest(filename=filename):
+                arrived = {"filename": filename, "X-Sha256": "a" * 64, "content_SHA-256": "a" * 64,
+                           "X-Artifact-Type": "python-packages", "X-Artifact-Format": "whl", "uuid": "u"}
+                self.assertEqual(high(FlowFile(b"x", **arrived)).relationship, "failure")
+        self.assertEqual(python_packages.wheel_name_version("foo-1.0-1-py3-none-any.whl"), ("foo", "1.0"))
+
+    def test_descriptor_literals_match_the_rules(self):
+        props = {d.name: d for d in RoutePythonTransfer.PROPERTIES}
+        self.assertEqual(props["Already Uploaded Pattern"].default_value, python_packages.ALREADY_THERE)
+        self.assertEqual(props["Accepted Formats"].allowable_values, list(python_packages.ACCEPTED_FORMATS))
 
 
 if __name__ == "__main__":

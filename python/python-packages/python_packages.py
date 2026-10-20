@@ -14,7 +14,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-WHEEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+!-]*[.]whl")
+# PEP 427: name-version[-build]-python-abi-platform.whl, a build tag starting with a digit.
+WHEEL = re.compile(r"([A-Za-z0-9][A-Za-z0-9._]*)-([0-9][A-Za-z0-9._+!]*)(?:-[0-9][A-Za-z0-9._]*)?"
+                   r"-[A-Za-z0-9._]+-[A-Za-z0-9._]+-[A-Za-z0-9._]+[.]whl")
 # A source distribution: name-version.tar.gz or .zip (PEP 625, and older names with hyphens in the project).
 SDIST = re.compile(r"([A-Za-z0-9][A-Za-z0-9._+!-]*)-([0-9][A-Za-z0-9._+!]*)[.](?:tar[.]gz|zip)")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -47,7 +49,7 @@ def plan_jobs(body, attributes, allowed_base, max_files, lookup=None):
     digest = (attributes.get("X-Sha256") or "").lower()
     if (digest or kind == "json") and hashlib.sha256(body).hexdigest() != digest:
         raise TransferError("request body does not match its X-Sha256")
-    files = text_files(body, lookup) if kind == "text" else json_files(body)
+    files = text_files(body, lookup, max_files) if kind == "text" else json_files(body)
     if len(files) > max_files:
         raise TransferError(f"{len(files)} files is more than Maximum Files ({max_files})")
     jobs = []
@@ -68,8 +70,8 @@ def json_files(body):
     return files
 
 
-def text_files(body, lookup):
-    """The entries for a list of wheel file names, each looked up in the index."""
+def text_files(body, lookup, max_files):
+    """The entries for a list of wheel file names, each looked up in the index once the count is within max_files."""
     if lookup is None:
         raise TransferError("a text request needs Index URL set on PlanPythonTransfer")
     try:
@@ -79,6 +81,8 @@ def text_files(body, lookup):
     names = [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
     if not names:
         raise TransferError("text request names no wheel")
+    if len(names) > max_files:
+        raise TransferError(f"{len(names)} files is more than Maximum Files ({max_files})")
     return [lookup(name) for name in names]
 
 
@@ -87,8 +91,8 @@ def wheel_name_version(filename):
     sdist = SDIST.fullmatch(filename)
     if sdist:
         return sdist.groups()
-    parts = filename[:-len(".whl")].split("-") if WHEEL.fullmatch(filename) else []
-    return (parts[0], parts[1]) if len(parts) >= 5 else ("", "")
+    wheel = WHEEL.fullmatch(filename)
+    return wheel.groups() if wheel else ("", "")
 
 
 def package_format(filename):
@@ -160,10 +164,10 @@ def web_opener(context):
 def check_index_url(index_url):
     """index_url, or TransferError when it is not an http(s) URL without credentials."""
     parts = urllib.parse.urlsplit(index_url or "")
+    if "@" in parts.netloc:  # before anything that echoes the URL, which would echo the password
+        raise TransferError("Index URL must not carry a user name or password; set Index Username and Index Password")
     if parts.scheme not in ("https", "http") or not parts.netloc:
         raise TransferError(f"Index URL must start with https:// or http://: {index_url!r}")
-    if "@" in parts.netloc:
-        raise TransferError("Index URL must not carry a user name or password; set Index Username and Index Password")
     return index_url.rstrip("/")
 
 
@@ -236,6 +240,8 @@ def entry_error(job, allowed_base):
         return f"{job['filename'] or job['url']!r} is not under {allowed_base}"
     if not package_format(job["filename"]):
         return f"{job['filename']!r} is not a wheel or source distribution file name"
+    if urllib.parse.unquote(job["url"].rsplit("/", 1)[-1]) != job["filename"]:
+        return f"{job['filename']!r} is not the file its url names"
     if not SHA256.fullmatch(job["sha256"]):
         return f"{job['filename']} has no sha256 of 64 lowercase hex characters"
     return ""
@@ -278,10 +284,12 @@ def arrived_attributes(attributes, secret=None):
     if attributes.get("content_SHA-256") != attributes.get("X-Sha256"):
         raise TransferError(f"{attributes.get('filename')} does not match its X-Sha256")
     name, version = wheel_name_version(attributes["filename"])
+    # Warehouse wants pyversion: the wheel's Python tag, or "source" for an sdist.
+    pyversion = "source" if kind == SDIST_FORMAT else attributes["filename"][:-len(".whl")].split("-")[-3]
     stamp = {"pypi.upload.key": upload_key(secret, attributes.get("uuid") or "", attributes["filename"])} if secret else {}
     return {"pypi.stage": "upload", "pypi.name": name, "pypi.version": version, "pypi.response": "",
-            "pypi.filetype": "sdist" if kind == SDIST_FORMAT else "bdist_wheel",
-            "invokehttp.status.code": "", "invokehttp.request.url": ""} | stamp
+            "pypi.filetype": "sdist" if kind == SDIST_FORMAT else "bdist_wheel", "pypi.pyversion": pyversion,
+            "invokehttp.status.code": "", "invokehttp.request.url": "", "invokehttp.response.url": ""} | stamp
 
 
 # What GitLab (400 "has already been taken"), PyPI/Warehouse (400 "File already exists"), Nexus (400 "does not
@@ -291,7 +299,9 @@ ALREADY_THERE = r"^(400|409) .*(already been taken|already exists|does not allow
 
 def upload_result(attributes, upload_url, already_there=ALREADY_THERE):
     """High side, after InvokeHTTP: "uploaded" on 2xx, "duplicate" when "<status> <response>" matches already_there."""
-    if attributes.get("invokehttp.request.url") != upload_url:
+    # InvokeHTTP keeps the URL asked in request.url and writes where a redirect ended in response.url.
+    if attributes.get("invokehttp.request.url") != upload_url or (
+            attributes.get("invokehttp.response.url") or upload_url) != upload_url:
         raise TransferError(f"{attributes.get('filename')} was not uploaded to {upload_url}")
     status, response = attributes.get("invokehttp.status.code") or "", attributes.get("pypi.response") or ""
     if status.startswith("2"):

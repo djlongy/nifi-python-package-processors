@@ -150,7 +150,7 @@ All properties stay at their defaults: Transfer Side `Low`, Upload URL empty, Al
 
 [![Fetch wheel properties, scrolled to the end](../images/pypi-fetch-properties-2.png)](../images/pypi-fetch-properties-2.png)
 
-The dialog scrolls: the second screenshot is the same tab scrolled to the end. HTTP URL is the wheel url RoutePythonTransfer copies from the request job, already checked against Allowed URL Base. Enter `${pypi.url}` exactly, never the index address. Leave Response Redirects Enabled at `True`, Response Body Attribute Name empty (a wheel must never be copied into an attribute) and Request Header Attributes Pattern empty (forwarding attributes as headers could leak them). Credentials stay on this card as parameters and are never written to an attribute.
+The dialog scrolls: the second screenshot is the same tab scrolled to the end. HTTP URL is the wheel url RoutePythonTransfer copies from the request job, already checked against Allowed URL Base. Enter `${pypi.url}` exactly, never the index address. Leave Response Redirects Enabled at `True`: GitLab can answer a file with a redirect to object storage, OkHttp drops the Authorization header when a redirect leaves the host, and the bytes are checked against the requested SHA-256 whatever served them. Leave Response Body Attribute Name empty (a wheel must never be copied into an attribute) and Request Header Attributes Pattern empty (forwarding attributes as headers could leak them). Credentials stay on this card as parameters and are never written to an attribute.
 
 #### Hash wheel (CryptographicHashContent): 0 properties
 
@@ -325,9 +325,9 @@ Upload URL must be exactly the HTTP URL of `Upload wheel`: an answer from any ot
 | `failure` | Not a wheel, sha256 mismatch, or an upload the index rejected. `pypi.error` says why | Rejected (inspect queue) |
 | `original` | Not used | Auto-terminate |
 
-#### Upload wheel (InvokeHTTP): 13 properties
+#### Upload wheel (InvokeHTTP): 16 properties
 
-Add the five `post:form:` properties with **Properties, +** as dynamic properties. Each becomes one field of the multipart upload form.
+Add the seven `post:form:` properties with **Properties, +** as dynamic properties. Each becomes one field of the multipart upload form.
 
 | Property | Value |
 |---|---|
@@ -339,17 +339,20 @@ Add the five `post:form:` properties with **Properties, +** as dynamic propertie
 | Request Password | `#{gitlab.high.token}` (shows as "Sensitive value set") |
 | Request Multipart Form-Data Name | `content` |
 | Response Body Attribute Name | `pypi.response` |
+| Response Redirects Enabled | `False` |
 | post:form::action (dynamic) | `file_upload` |
 | post:form:name (dynamic) | `${pypi.name}` |
 | post:form:protocol_version (dynamic) | `1` |
 | post:form:sha256_digest (dynamic) | `${content_SHA-256}` |
 | post:form:version (dynamic) | `${pypi.version}` |
+| post:form:filetype (dynamic) | `${pypi.filetype}` |
+| post:form:pyversion (dynamic) | `${pypi.pyversion}` |
 
 [![Upload wheel properties, top](../images/pypi-upload-properties.png)](../images/pypi-upload-properties.png)
 
 [![Upload wheel properties, scrolled to the end](../images/pypi-upload-properties-2.png)](../images/pypi-upload-properties-2.png)
 
-The dialog scrolls: the second screenshot is the same tab scrolled to the end, with the five form fields. Request Multipart Form-Data Filename Enabled stays `true`, so the wheel goes up under its `filename`. Request Content-Type stays `${mime.type}` and Response Body Attribute Size `256`. `post:form::action` has two colons: the field name is `:action`. PyPI and pypiserver need `:action` and `protocol_version`, GitLab ignores them. RoutePythonTransfer reads `pypi.name` and `pypi.version` again from the wheel's file name and clears `pypi.response` before the upload, so nothing from the low side decides what is uploaded or how the answer is read.
+The dialog scrolls: the second screenshot is the same tab scrolled to the end, with the form fields (the screenshot predates `filetype` and `pyversion`). Request Multipart Form-Data Filename Enabled stays `true`, so the wheel goes up under its `filename`. Request Content-Type stays `${mime.type}` and Response Body Attribute Size `256`. `post:form::action` has two colons: the field name is `:action`. PyPI and pypiserver need `:action` and `protocol_version`, and PyPI also `filetype` and `pyversion`; GitLab ignores all four. Response Redirects Enabled is `False` here: a redirected upload answer, such as a sign-in page with HTTP 200, must not read as uploaded, and RoutePythonTransfer refuses any answer whose `invokehttp.response.url` is not the Upload URL. RoutePythonTransfer reads `pypi.name` and `pypi.version` again from the wheel's file name and clears `pypi.response` before the upload, so nothing from the low side decides what is uploaded or how the answer is read.
 
 #### Rejected (inspect queue) (LogMessage): 2 properties
 

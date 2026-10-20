@@ -8,12 +8,12 @@ from nifiapi.properties import ExpressionLanguageScope, PropertyDescriptor, Stan
 from nifiapi.relationship import Relationship
 
 from nifi_attributes import Attributes, evaluate
-from python_packages import (ACCEPTED_FORMATS, ALREADY_THERE, WHEEL_FORMAT, TransferError, arrived_attributes,
-                             fetch_attributes, fetched_attributes, format_refused, upload_key, upload_result)
+from python_packages import (ALREADY_THERE, WHEEL_FORMAT, TransferError, arrived_attributes, fetch_attributes,
+                             fetched_attributes, format_refused, upload_key, upload_result)
 
 ERROR, STAGE = "pypi.error", "pypi.stage"
 READ = ("pypi.filename", "pypi.url", "pypi.sha256", "filename", "X-Sha256", "X-Artifact-Type", "X-Artifact-Format",
-        "content_SHA-256", "invokehttp.request.url", "invokehttp.status.code", "pypi.response", "uuid", "pypi.upload.key")
+        "content_SHA-256", "invokehttp.request.url", "invokehttp.response.url", "invokehttp.status.code", "pypi.response", "uuid", "pypi.upload.key")
 
 
 @use_case(description="Low side: fetch each wheel a PlanPythonTransfer job names with native InvokeHTTP and label it for "
@@ -74,7 +74,8 @@ class RoutePythonTransfer(FlowFileTransform):
             "pypi.response) meaning the index already holds the file, so it counts as done. The default covers GitLab, "
             "PyPI, pypiserver, Artifactory and Nexus."),
         required=True,
-        default_value=ALREADY_THERE,
+        # Literal values: NiFi reads descriptors by static parsing, which cannot follow an import.
+        default_value="^(400|409) .*(already been taken|already exists|does not allow updating)",
         validators=[StandardValidators.REGULAR_EXPRESSION_VALIDATOR])
 
     ACCEPTED = PropertyDescriptor(
@@ -84,8 +85,8 @@ class RoutePythonTransfer(FlowFileTransform):
             "(name-version.tar.gz or .zip) only, or whl,sdist both. Anything else is always refused. Pip builds an "
             "sdist on install, running its setup code."),
         required=True,
-        default_value=WHEEL_FORMAT,
-        allowable_values=list(ACCEPTED_FORMATS))
+        default_value="whl",
+        allowable_values=["whl", "sdist", "whl,sdist"])
     UPLOAD_SECRET = PropertyDescriptor(
         name="Upload Secret",
         description=(

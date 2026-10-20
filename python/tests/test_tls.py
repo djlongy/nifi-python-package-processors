@@ -48,6 +48,9 @@ class IndexUrlTest(unittest.TestCase):
             with self.subTest(url), self.assertRaises(TransferError):
                 check_index_url(url)
         self.assertEqual(check_index_url("https://gitlab.example.com/pypi/"), "https://gitlab.example.com/pypi")
+        with self.assertRaises(TransferError) as caught:
+            check_index_url("ftp://user:canary-1234@gitlab.example.com/pypi")
+        self.assertNotIn("canary-1234", str(caught.exception))
 
 
 class OriginTest(unittest.TestCase):

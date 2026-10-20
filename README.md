@@ -56,7 +56,8 @@ The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the l
 | `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl` (or `sdist`), `X-Artifact-Action` `mirror`, `mime.type` | Route (low, after the hash) | The labels the wheel crosses with; route on `X-Artifact-Type` on the high side |
 | `pypi.stage` | Route | `fetch`, `sent`, `upload`: which step a FlowFile is at |
 | `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by Upload Secret, or when that is empty by a random secret of this Python process. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
-| `pypi.result` | Route (high) | `uploaded` or `duplicate` |
+| `pypi.result` | Route (high) | `uploaded` or `duplicate`. `duplicate` means the index already holds a file of that name; GitLab answers the same for the same bytes and for different ones, so compare the sha256 each side's simple page lists to prove the two sides match |
+| `pypi.filetype`, `pypi.pyversion` | Route (high) | Upload form fields from the file name: `bdist_wheel` and the wheel's Python tag, or `sdist` and `source` |
 | `pypi.error` | both | Why a FlowFile went to failure |
 | `pypi.job.count`, `pypi.refused.count` | Plan | Wheels in the request, and how many the allowlist refused |
 
@@ -120,7 +121,8 @@ Import an intermediate CA under its own alias. RoutePythonTransfer makes no conn
 | High | Request Content-Type | `${mime.type}` |
 | High | dynamic `post:form:name`, `post:form:version`, `post:form:sha256_digest` | `${pypi.name}`, `${pypi.version}`, `${content_SHA-256}` |
 | High | dynamic `post:form::action`, `post:form:protocol_version` | `file_upload`, `1` (PyPI and pypiserver need them; GitLab ignores them) |
-| High | dynamic `post:form:filetype` | `${pypi.filetype}`: `bdist_wheel` or `sdist` (PyPI needs it; GitLab ignores it) |
+| High | dynamic `post:form:filetype`, `post:form:pyversion` | `${pypi.filetype}` (`bdist_wheel` or `sdist`), `${pypi.pyversion}` (the wheel's Python tag, or `source`); PyPI needs both, GitLab ignores them |
+| High | Response Redirects Enabled | `False`: an upload answer from anywhere but Upload URL is refused |
 | High | Response Body Attribute Name / Size | `pypi.response` / `256` |
 | Both | SSL Context Service | the StandardSSLContextService above, for a private CA |
 
