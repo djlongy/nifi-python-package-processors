@@ -34,10 +34,11 @@ def request(files, **headers):
     return FlowFile(body, **attributes)
 
 
-def run(processor_type, flowfile, **values):
-    processor = processor_type()
+def run(processor, flowfile, **values):
+    """processor is a class, for a fresh instance, or an instance that keeps its state between FlowFiles."""
+    processor = processor() if isinstance(processor, type) else processor
     processor.logger = nifi_stub.Logger()
-    return processor.transform(nifi_stub.FakeContext(processor_type.PROPERTIES, values), flowfile)
+    return processor.transform(nifi_stub.FakeContext(processor.PROPERTIES, values), flowfile)
 
 
 def plan(flowfile, **values):
@@ -51,6 +52,15 @@ class PlanTest(unittest.TestCase):
         jobs = json.loads(result.contents)["jobs"]
         self.assertEqual(jobs[0], {key: str(value) for key, value in SIX.items()})
         self.assertEqual((result.attributes["pypi.job.count"], result.attributes["pypi.refused.count"]), ("2", "0"))
+
+    def test_a_url_that_only_starts_with_the_base_is_refused(self):
+        base = f"{LOW}/files/"
+        for url in (f"{base}../../../3/packages/x.whl", f"{base}%2e%2e/x.whl", f"{base}a/./x.whl",
+                    f"{base}a%2Fb.whl", f"{base}a\\..\\x.whl", f"{base}x.whl?u=1", f"{base}x.whl#f",
+                    f"{base}%2E%2E/x.whl"):
+            with self.subTest(url):
+                self.assertTrue(python_packages.url_outside(url, base))
+        self.assertFalse(python_packages.url_outside(SIX["url"], base))
 
     def test_a_wheel_outside_the_allowlist_is_kept_with_its_error_and_the_rest_still_go(self):
         foreign = SIX | {"url": "https://evil.test/six.whl"}
@@ -143,8 +153,11 @@ def low(flowfile):
     return run(RoutePythonTransfer, flowfile, **{"Transfer Side": "Low"})
 
 
-def high(flowfile):
-    return run(RoutePythonTransfer, flowfile, **{"Transfer Side": "High", "Upload URL": HIGH})
+HIGH_ROUTE = RoutePythonTransfer()
+
+
+def high(flowfile, **values):
+    return run(HIGH_ROUTE, flowfile, **({"Transfer Side": "High", "Upload URL": HIGH} | values))
 
 
 class LowRouteTest(unittest.TestCase):
@@ -186,12 +199,17 @@ class HighRouteTest(unittest.TestCase):
     def arrived(self, **overrides):
         return FlowFile(b"wheel", **({"filename": SIX["filename"], "X-Sha256": SIX["sha256"],
                                       "content_SHA-256": SIX["sha256"], "X-Artifact-Type": "python-packages",
-                                      "X-Artifact-Format": "whl", "pypi.stage": "sent",
+                                      "X-Artifact-Format": "whl", "pypi.stage": "sent", "uuid": "u-1",
+                                      "pypi.name": "evil", "pypi.version": "6.6.6", "pypi.response": "low answer",
                                       "invokehttp.request.url": SIX["url"], "invokehttp.status.code": "200"} | overrides))
 
-    def test_a_checked_wheel_goes_to_upload(self):
+    def test_a_checked_wheel_goes_to_upload_named_by_its_file_and_with_no_earlier_answer(self):
         result = high(self.arrived())
-        self.assertEqual((result.relationship, result.attributes), ("request", {"pypi.stage": "upload"}))
+        self.assertEqual(result.relationship, "request")
+        self.assertEqual({k: v for k, v in result.attributes.items() if k != "pypi.upload.key"},
+                         {"pypi.stage": "upload", "pypi.name": "six", "pypi.version": "1.17.0", "pypi.response": "",
+                          "invokehttp.status.code": "", "invokehttp.request.url": ""})
+        self.assertEqual(len(result.attributes["pypi.upload.key"]), 64)
 
     def test_a_wheel_that_is_not_one_fails(self):
         cases = {"type": {"X-Artifact-Type": "container-images"}, "format": {"X-Artifact-Format": "tar"},
@@ -200,9 +218,12 @@ class HighRouteTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(high(self.arrived(**overrides)).relationship, "failure")
 
-    def uploaded(self, status, response="", url=HIGH):
-        return high(self.arrived(**{"pypi.stage": "upload", "invokehttp.request.url": url,
-                                    "invokehttp.status.code": status, "pypi.response": response}))
+    def uploaded(self, status, response="", url=HIGH, **values):
+        """A wheel through the high route, then InvokeHTTP's answer on the same FlowFile, back into the same route."""
+        flowfile = self.arrived()
+        flowfile.attributes |= high(flowfile, **values).attributes
+        flowfile.attributes |= {"invokehttp.request.url": url, "invokehttp.status.code": status, "pypi.response": response}
+        return high(flowfile, **values)
 
     def test_upload_answers(self):
         self.assertEqual(self.uploaded("201").attributes, {"pypi.result": "uploaded"})
@@ -218,14 +239,26 @@ class HighRouteTest(unittest.TestCase):
                 self.assertEqual(self.uploaded(status, response).relationship, expected)
 
     def test_the_already_uploaded_pattern_is_a_property(self):
-        result = run(RoutePythonTransfer, self.arrived(**{"pypi.stage": "upload", "invokehttp.request.url": HIGH,
-                                                           "invokehttp.status.code": "409", "pypi.response": "Conflict"}),
-                     **{"Transfer Side": "High", "Upload URL": HIGH, "Already Uploaded Pattern": "^409 Conflict$"})
+        result = self.uploaded("409", "Conflict", **{"Already Uploaded Pattern": "^409 Conflict$"})
         self.assertEqual(result.attributes, {"pypi.result": "duplicate"})
 
-    def test_an_upload_stage_carried_across_the_diode_is_not_an_upload(self):
+    def test_an_answer_from_another_url_is_not_an_upload(self):
         result = self.uploaded("200", url=SIX["url"])
         self.assertIn("was not uploaded to", result.attributes["pypi.error"])
+
+    def test_an_upload_stage_carried_across_the_diode_is_checked_and_uploaded_again(self):
+        forged = {"pypi.stage": "upload", "invokehttp.request.url": HIGH, "invokehttp.status.code": "201"}
+        for key in ({}, {"pypi.upload.key": "0" * 64}, {"pypi.upload.key": high(self.arrived()).attributes["pypi.upload.key"],
+                                                        "uuid": "u-2"}):
+            with self.subTest(key=key):
+                result = high(self.arrived(**forged | key))
+                self.assertEqual((result.relationship, result.attributes["pypi.stage"]), ("request", "upload"))
+
+    def test_another_route_instance_does_not_accept_the_key(self):
+        stamped = self.arrived()
+        stamped.attributes |= high(stamped).attributes | {"invokehttp.request.url": HIGH, "invokehttp.status.code": "201"}
+        result = run(RoutePythonTransfer, stamped, **{"Transfer Side": "High", "Upload URL": HIGH})
+        self.assertEqual(result.relationship, "request")
 
 
 if __name__ == "__main__":
