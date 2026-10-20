@@ -3,7 +3,10 @@ import hashlib
 import json
 import unittest
 
+import io
+
 import nifi_stub
+import python_packages
 from PlanPythonTransfer import PlanPythonTransfer
 from RoutePythonTransfer import RoutePythonTransfer
 
@@ -79,6 +82,61 @@ class PlanTest(unittest.TestCase):
     def test_more_files_than_the_maximum_is_refused(self):
         result = plan(request([SIX] * 3), **{"Maximum Files": "2"})
         self.assertIn("more than Maximum Files (2)", result.attributes["pypi.error"])
+
+
+SIMPLE = (f'<html><body><a href="{LOW}/files/{"a" * 64}/six-1.17.0-py2.py3-none-any.whl#sha256={"a" * 64}">'
+          'six-1.17.0-py2.py3-none-any.whl</a></body></html>')
+
+
+class FakeIndex:
+    """An opener answering /simple/six/ with SIMPLE and recording what was asked and with which credentials."""
+    def __init__(self):
+        self.asked = []
+
+    def open(self, request, timeout=None):
+        self.asked.append((request.full_url, request.get_header("Authorization")))
+        if not request.full_url.endswith("/simple/six/"):
+            raise OSError("HTTP Error 404: Not Found")
+        return io.BytesIO(SIMPLE.encode())
+
+
+def text_request(text, **headers):
+    return FlowFile(text.encode(), **({"X-Artifact-Type": "python-packages-request", "X-Artifact-Format": "text"} | headers))
+
+
+class TextRequestTest(unittest.TestCase):
+    """A resend typed into GenerateFlowFile: wheel file names, looked up in the low index."""
+
+    def plan(self, flowfile, index=None):
+        index = index or FakeIndex()
+        lookup = python_packages.index_lookup(LOW, "__token__", "secret", opener=index)
+        return python_packages.plan_jobs(flowfile.getContentsAsBytes(), flowfile.attributes, f"{LOW}/files/", 1000,
+                                         lookup), index
+
+    def test_each_named_wheel_gets_its_url_and_sha256_from_the_index(self):
+        jobs, index = self.plan(text_request("# resend\nsix-1.17.0-py2.py3-none-any.whl\n\n"))
+        self.assertEqual(jobs, [{"filename": SIX["filename"], "name": "six", "version": "1.17.0", "sha256": "a" * 64,
+                                 "size": "", "url": SIX["url"]}])
+        self.assertEqual(index.asked, [(f"{LOW}/simple/six/", "Basic X190b2tlbl9fOnNlY3JldA==")])
+
+    def test_a_wheel_the_index_does_not_list_is_refused_alone(self):
+        jobs, _ = self.plan(text_request("six-1.17.0-py2.py3-none-any.whl\nsix-9.9-py3-none-any.whl\n"))
+        self.assertNotIn("error", jobs[0])
+        self.assertIn("is not in the index", jobs[1]["error"])
+
+    def test_an_unreachable_index_refuses_the_request(self):
+        with self.assertRaisesRegex(python_packages.TransferError, "404"):
+            self.plan(text_request("idna-3.20-py3-none-any.whl\n"))
+
+    def test_a_given_x_sha256_is_checked_and_an_empty_list_is_refused(self):
+        with self.assertRaisesRegex(python_packages.TransferError, "X-Sha256"):
+            self.plan(text_request("six-1.17.0-py2.py3-none-any.whl", **{"X-Sha256": "0" * 64}))
+        with self.assertRaisesRegex(python_packages.TransferError, "names no wheel"):
+            self.plan(text_request("# nothing\n"))
+
+    def test_the_processor_refuses_a_text_request_without_an_index(self):
+        result = plan(text_request("six-1.17.0-py2.py3-none-any.whl"))
+        self.assertIn("needs Index URL", result.attributes["pypi.error"])
 
 
 def low(flowfile):
