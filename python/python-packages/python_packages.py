@@ -15,10 +15,13 @@ import urllib.parse
 import urllib.request
 
 WHEEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+!-]*[.]whl")
+# A source distribution: name-version.tar.gz or .zip (PEP 625, and older names with hyphens in the project).
+SDIST = re.compile(r"([A-Za-z0-9][A-Za-z0-9._+!-]*)-([0-9][A-Za-z0-9._+!]*)[.](?:tar[.]gz|zip)")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 REQUEST_TYPE, REQUEST_FORMATS = "python-packages-request", ("json", "text")
 WHEEL_TYPE, WHEEL_FORMAT, WHEEL_ACTION = "python-packages", "whl", "mirror"
+SDIST_FORMAT = "sdist"
 FIELDS = ("filename", "name", "version", "sha256", "size", "url")
 
 
@@ -80,9 +83,17 @@ def text_files(body, lookup):
 
 
 def wheel_name_version(filename):
-    """(distribution, version) from a wheel file name, or ("", "")."""
+    """(distribution, version) from a wheel or source distribution file name, or ("", "")."""
+    sdist = SDIST.fullmatch(filename)
+    if sdist:
+        return sdist.groups()
     parts = filename[:-len(".whl")].split("-") if WHEEL.fullmatch(filename) else []
     return (parts[0], parts[1]) if len(parts) >= 5 else ("", "")
+
+
+def package_format(filename):
+    """X-Artifact-Format for a package file: whl, sdist, or "" for anything else."""
+    return WHEEL_FORMAT if WHEEL.fullmatch(filename) else SDIST_FORMAT if SDIST.fullmatch(filename) else ""
 
 
 class _Links(html.parser.HTMLParser):
@@ -213,8 +224,8 @@ def entry_error(job, allowed_base):
         return f"{job['filename']!r} is not in the index"
     if url_outside(job["url"], allowed_base):
         return f"{job['filename'] or job['url']!r} is not under {allowed_base}"
-    if not WHEEL.fullmatch(job["filename"]):
-        return f"{job['filename']!r} is not a wheel file name"
+    if not package_format(job["filename"]):
+        return f"{job['filename']!r} is not a wheel or source distribution file name"
     if not SHA256.fullmatch(job["sha256"]):
         return f"{job['filename']} has no sha256 of 64 lowercase hex characters"
     return ""
@@ -234,7 +245,8 @@ def fetched_attributes(attributes):
     if attributes.get("content_SHA-256") != attributes.get("pypi.sha256"):
         raise TransferError(f"{attributes.get('pypi.filename')} does not match its sha256")
     return {"filename": attributes["pypi.filename"], "X-Sha256": attributes["pypi.sha256"],
-            "X-Artifact-Type": WHEEL_TYPE, "X-Artifact-Format": WHEEL_FORMAT, "X-Artifact-Action": WHEEL_ACTION,
+            "X-Artifact-Type": WHEEL_TYPE, "X-Artifact-Format": package_format(attributes["pypi.filename"]),
+            "X-Artifact-Action": WHEEL_ACTION,
             "mime.type": "application/octet-stream", "pypi.stage": "sent"}
 
 
@@ -248,17 +260,17 @@ def arrived_attributes(attributes, secret=None):
     """High side: a wheel from the diode may be uploaded when its labels are a wheel's and its bytes match X-Sha256.
     Name and version come from the file name, never from attributes set on the low side, and the answer of any
     earlier request is cleared so it cannot be read as this upload's."""
-    if attributes.get("X-Artifact-Type") != WHEEL_TYPE or attributes.get("X-Artifact-Format") != WHEEL_FORMAT:
-        raise TransferError(f"{attributes.get('filename')} is not labelled a Python wheel")
-    if not WHEEL.fullmatch(attributes.get("filename") or ""):
-        raise TransferError(f"{attributes.get('filename')!r} is not a wheel file name")
+    kind = package_format(attributes.get("filename") or "")
+    if not kind:
+        raise TransferError(f"{attributes.get('filename')!r} is not a wheel or source distribution file name")
+    if attributes.get("X-Artifact-Type") != WHEEL_TYPE or attributes.get("X-Artifact-Format") != kind:
+        raise TransferError(f"{attributes.get('filename')} is not labelled a Python {kind}")
     if attributes.get("content_SHA-256") != attributes.get("X-Sha256"):
         raise TransferError(f"{attributes.get('filename')} does not match its X-Sha256")
     name, version = wheel_name_version(attributes["filename"])
-    if not name:
-        raise TransferError(f"{attributes.get('filename')!r} is not a wheel file name")
     stamp = {"pypi.upload.key": upload_key(secret, attributes.get("uuid") or "", attributes["filename"])} if secret else {}
     return {"pypi.stage": "upload", "pypi.name": name, "pypi.version": version, "pypi.response": "",
+            "pypi.filetype": "sdist" if kind == SDIST_FORMAT else "bdist_wheel",
             "invokehttp.status.code": "", "invokehttp.request.url": ""} | stamp
 
 

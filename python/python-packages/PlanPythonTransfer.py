@@ -30,7 +30,7 @@ class PlanPythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.2.0"
+        version = "0.3.0"
         description = ("Plans the transfer of Python wheels: checks a request (X-Artifact-Type python-packages-request, "
                        "X-Artifact-Format json with X-Sha256 of the body, or text: wheel file names looked up in Index URL) "
                        "and emits one JSON job list, {\"jobs\": [...]}, for SplitJson on $.jobs. Each job names a wheel's "

@@ -34,6 +34,8 @@ every failure and InvokeHTTP Failure -> LogMessage "Rejected (inspect queue)", k
 
 The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the link), so neither side packs or unpacks. InvokeHTTP retries its own `Retry` relationship. Keep the default back pressure (10000) on every connection in a loop.
 
+Source distributions (`name-version.tar.gz` or `.zip`) cross the same way when gitlab-pypi-mirror sends them (`MIRROR_PUBLISH_SDISTS=true`): the same allowlist and SHA-256 checks, labelled `X-Artifact-Format` `sdist`, and on the high side name and version come from the file name. Anything else, such as `.tar.bz2` or `.egg`, is refused.
+
 ## Relationships
 
 | Processor | Relationship | Meaning |
@@ -49,7 +51,7 @@ The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the l
 | Attribute | Set by | Meaning |
 |---|---|---|
 | `pypi.filename`, `pypi.name`, `pypi.version`, `pypi.sha256`, `pypi.size`, `pypi.url` | Route (low) | The job; InvokeHTTP fetches `${pypi.url}`, the high InvokeHTTP posts `${pypi.name}` and `${pypi.version}` |
-| `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl`, `X-Artifact-Action` `mirror`, `mime.type` | Route (low, after the hash) | The labels the wheel crosses with; route on `X-Artifact-Type` on the high side |
+| `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl` (or `sdist`), `X-Artifact-Action` `mirror`, `mime.type` | Route (low, after the hash) | The labels the wheel crosses with; route on `X-Artifact-Type` on the high side |
 | `pypi.stage` | Route | `fetch`, `sent`, `upload`: which step a FlowFile is at |
 | `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by a secret only this RoutePythonTransfer holds. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
 | `pypi.result` | Route (high) | `uploaded` or `duplicate` |
@@ -114,6 +116,7 @@ Import an intermediate CA under its own alias. RoutePythonTransfer makes no conn
 | High | Request Content-Type | `${mime.type}` |
 | High | dynamic `post:form:name`, `post:form:version`, `post:form:sha256_digest` | `${pypi.name}`, `${pypi.version}`, `${content_SHA-256}` |
 | High | dynamic `post:form::action`, `post:form:protocol_version` | `file_upload`, `1` (PyPI and pypiserver need them; GitLab ignores them) |
+| High | dynamic `post:form:filetype` | `${pypi.filetype}`: `bdist_wheel` or `sdist` (PyPI needs it; GitLab ignores it) |
 | High | Response Body Attribute Name / Size | `pypi.response` / `256` |
 | Both | SSL Context Service | the StandardSSLContextService above, for a private CA |
 

@@ -68,7 +68,7 @@ class PlanTest(unittest.TestCase):
         jobs = json.loads(plan(request([SIX, foreign, bad_name, bad_digest])).contents)["jobs"]
         self.assertNotIn("error", jobs[0])
         self.assertIn("is not under", jobs[1]["error"])
-        self.assertIn("not a wheel file name", jobs[2]["error"])
+        self.assertIn("not a wheel or source distribution file name", jobs[2]["error"])
         self.assertIn("64 lowercase hex", jobs[3]["error"])
 
     def test_the_whole_request_is_refused(self):
@@ -208,7 +208,7 @@ class HighRouteTest(unittest.TestCase):
         self.assertEqual(result.relationship, "request")
         self.assertEqual({k: v for k, v in result.attributes.items() if k != "pypi.upload.key"},
                          {"pypi.stage": "upload", "pypi.name": "six", "pypi.version": "1.17.0", "pypi.response": "",
-                          "invokehttp.status.code": "", "invokehttp.request.url": ""})
+                          "pypi.filetype": "bdist_wheel", "invokehttp.status.code": "", "invokehttp.request.url": ""})
         self.assertEqual(len(result.attributes["pypi.upload.key"]), 64)
 
     def test_a_wheel_that_is_not_one_fails(self):
@@ -259,6 +259,38 @@ class HighRouteTest(unittest.TestCase):
         stamped.attributes |= high(stamped).attributes | {"invokehttp.request.url": HIGH, "invokehttp.status.code": "201"}
         result = run(RoutePythonTransfer, stamped, **{"Transfer Side": "High", "Upload URL": HIGH})
         self.assertEqual(result.relationship, "request")
+
+
+PYCRC = {"filename": "pycrc16-0.1.2.tar.gz", "name": "pycrc16", "version": "0.1.2", "sha256": "c" * 64, "size": 112640,
+         "url": f"{LOW}/files/{'c' * 64}/pycrc16-0.1.2.tar.gz"}
+
+
+class SdistTest(unittest.TestCase):
+    """A source distribution the mirror sends with MIRROR_PUBLISH_SDISTS crosses like a wheel, labelled sdist."""
+
+    def test_an_sdist_is_planned_fetched_and_labelled_sdist(self):
+        jobs = json.loads(plan(request([PYCRC, PYCRC | {"filename": "pyreadline-2.1.zip"}])).contents)["jobs"]
+        self.assertFalse([job for job in jobs if "error" in job])
+        fetched = {f"pypi.{k}": str(v) for k, v in PYCRC.items()} | {
+            "pypi.stage": "fetch", "content_SHA-256": PYCRC["sha256"], "invokehttp.request.url": PYCRC["url"]}
+        result = low(FlowFile(b"sdist", **fetched))
+        self.assertEqual((result.relationship, result.attributes["X-Artifact-Format"], result.attributes["filename"]),
+                         ("success", "sdist", PYCRC["filename"]))
+
+    def test_the_high_side_uploads_an_sdist_named_by_its_file(self):
+        arrived = {"filename": PYCRC["filename"], "X-Sha256": PYCRC["sha256"], "content_SHA-256": PYCRC["sha256"],
+                   "X-Artifact-Type": "python-packages", "X-Artifact-Format": "sdist", "uuid": "u-9"}
+        result = high(FlowFile(b"sdist", **arrived))
+        self.assertEqual(result.relationship, "request")
+        self.assertEqual((result.attributes["pypi.name"], result.attributes["pypi.version"],
+                          result.attributes["pypi.filetype"]), ("pycrc16", "0.1.2", "sdist"))
+
+    def test_a_label_that_does_not_match_the_file_is_refused(self):
+        for filename, kind in ((PYCRC["filename"], "whl"), (SIX["filename"], "sdist"), ("pycrc16-0.1.2.tar.bz2", "sdist")):
+            with self.subTest(filename=filename, kind=kind):
+                arrived = {"filename": filename, "X-Sha256": "c" * 64, "content_SHA-256": "c" * 64,
+                           "X-Artifact-Type": "python-packages", "X-Artifact-Format": kind}
+                self.assertEqual(high(FlowFile(b"x", **arrived)).relationship, "failure")
 
 
 if __name__ == "__main__":

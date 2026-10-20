@@ -44,7 +44,7 @@ class RoutePythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.2.0"
+        version = "0.3.0"
         description = ("Routes Python wheels around native InvokeHTTP and CryptographicHashContent; it never reads a "
                        "wheel. Low side: prepares each PlanPythonTransfer job for download (pypi.* attributes, HTTP URL "
                        "${pypi.url}) and labels the downloaded wheel for the diode (filename, X-Sha256, X-Artifact-Type "
