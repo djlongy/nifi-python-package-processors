@@ -47,13 +47,13 @@ On the low NiFi instance, create a **Process Group** (the reference uses `pypi c
 
 | Parameter | Sensitive | Example value / purpose |
 |---|---|---|
-| `gitlab.pypi.low.url` | No | `https://gitlab.example.com/api/v4/groups/7/-/packages/pypi`, the low index (a group or a project), with no trailing slash |
-| `gitlab.pypi.low.project.url` | No | `https://gitlab.example.com/api/v4/projects/12/packages/pypi`, the project gitlab-pypi-mirror publishes to. Only needed when `gitlab.pypi.low.url` is a group |
-| `gitlab.pypi.low.username` | No | The deploy token's user, or `__token__` for a personal or project access token |
-| `gitlab.pypi.low.token` | **Yes** | A token with `read_package_registry` on the low group or project |
+| `gitlab.pypi.url` | No | `https://gitlab.example.com/api/v4/groups/7/-/packages/pypi`, the low index (a group or a project), with no trailing slash |
+| `gitlab.pypi.project.url` | No | `https://gitlab.example.com/api/v4/projects/12/packages/pypi`, the project gitlab-pypi-mirror publishes to. Only needed when `gitlab.pypi.url` is a group |
+| `gitlab.pypi.username` | No | The deploy token's user, or `__token__` for a personal or project access token |
+| `gitlab.pypi.token` | **Yes** | A token with `read_package_registry` on the low group or project |
 | `request.path` | No | `pypi-request`, the listener's base path |
 
-The index address, user and token come from this context, **never from the request**. The file urls in a request must start with an Allowed URL Base, so a request cannot point NiFi at another host. A group index's simple pages link to the group's own files URL, but the webhook names files under the project gitlab-pypi-mirror publishes to, so with a group set Allowed URL Base to both: `#{gitlab.pypi.low.url}/files/ #{gitlab.pypi.low.project.url}/files/`.
+The index address, user and token come from this context, **never from the request**. The file urls in a request must start with an Allowed URL Base, so a request cannot point NiFi at another host. A group index's simple pages link to the group's own files URL, but the webhook names files under the project gitlab-pypi-mirror publishes to, so with a group set Allowed URL Base to both: `#{gitlab.pypi.url}/files/ #{gitlab.pypi.project.url}/files/`.
 
 **Private CA.** If the index certificate chains to a public CA, leave every **SSL Context Service** blank, as the reference flow does. For a private CA, follow [TLS and private CAs](../../README.md#tls-and-private-cas) and select the service on `PlanPythonTransfer` and on `InvokeHTTP`. RoutePythonTransfer makes no connection and has no SSL property.
 
@@ -107,10 +107,10 @@ Open **Configure, Properties** on each card. Each table lists only the propertie
 
 | Property | Value |
 |---|---|
-| Allowed URL Base | `#{gitlab.pypi.low.url}/files/`, and with a group index ` #{gitlab.pypi.low.project.url}/files/` after it |
-| Index URL | `#{gitlab.pypi.low.url}` |
-| Index Username | `#{gitlab.pypi.low.username}` |
-| Index Password | `#{gitlab.pypi.low.token}` (shows as "Sensitive value set") |
+| Allowed URL Base | `#{gitlab.pypi.url}/files/`, and with a group index ` #{gitlab.pypi.project.url}/files/` after it |
+| Index URL | `#{gitlab.pypi.url}` |
+| Index Username | `#{gitlab.pypi.username}` |
+| Index Password | `#{gitlab.pypi.token}` (shows as "Sensitive value set") |
 
 [![PlanPythonTransfer properties](../images/pypi-plan-properties.png)](../images/pypi-plan-properties.png)
 
@@ -144,8 +144,8 @@ All properties stay at their defaults: Transfer Side `Low`, Upload URL empty, Al
 | HTTP Method | `GET` (the default, listed so you check it) |
 | HTTP URL | `${pypi.url}` |
 | Socket Read Timeout | `5 mins` |
-| Request Username | `#{gitlab.pypi.low.username}` |
-| Request Password | `#{gitlab.pypi.low.token}` (shows as "Sensitive value set") |
+| Request Username | `#{gitlab.pypi.username}` |
+| Request Password | `#{gitlab.pypi.token}` (shows as "Sensitive value set") |
 
 [![Fetch wheel properties, top](../images/pypi-fetch-properties.png)](../images/pypi-fetch-properties.png)
 
@@ -275,12 +275,12 @@ On the high NiFi instance, create a **Process Group** (the reference uses `pypi 
 
 | Parameter | Sensitive | Example value / purpose |
 |---|---|---|
-| `gitlab.pypi.high.url` | No | `https://gitlab.example.com/api/v4/projects/34/packages/pypi`, the high index's upload URL (always a project: GitLab uploads only to a project) |
-| `gitlab.pypi.high.username` | No | The deploy token's user, or `__token__` for a personal or project access token |
-| `gitlab.pypi.high.token` | **Yes** | A token with `write_package_registry` on the high project |
-| `gitlab.pypi.high.upload.secret` | **Yes** | 32 or more random characters (`openssl rand -base64 36`), RoutePythonTransfer's Upload Secret |
+| `gitlab.pypi.url` | No | `https://gitlab.example.com/api/v4/projects/34/packages/pypi`, the high index's upload URL (always a project: GitLab uploads only to a project) |
+| `gitlab.pypi.username` | No | The deploy token's user, or `__token__` for a personal or project access token |
+| `gitlab.pypi.token` | **Yes** | A token with `write_package_registry` on the high project |
+| `gitlab.pypi.upload.secret` | **Yes** | 32 or more random characters (`openssl rand -base64 36`), RoutePythonTransfer's Upload Secret |
 
-Parameters are named `<system>.<service>.<side>.<key>`, so every GitLab parameter sorts under `gitlab.` and each service (`gitlab.pypi`, `gitlab.container`) keeps to its own process groups.
+Parameters are named `<system>.<service>.<key>`, so every GitLab parameter sorts under `gitlab.` and each service (`gitlab.pypi`, `gitlab.container`) keeps to its own process groups. The low and high sides are separate NiFi instances, so they share names. A lab NiFi that runs both sides adds the side: `gitlab.pypi.low.url`, `gitlab.pypi.high.url`.
 
 For a private CA, select a StandardSSLContextService on `Upload wheel` as in [TLS and private CAs](../../README.md#tls-and-private-cas). The reference flow leaves it empty.
 
@@ -315,8 +315,8 @@ Defaults: Hash Algorithm `SHA-256`, Fail When Content Empty `false`. The high si
 | Property | Value |
 |---|---|
 | Transfer Side | `High` |
-| Upload URL | `#{gitlab.pypi.high.url}` |
-| Upload Secret | `#{gitlab.pypi.high.upload.secret}`, a sensitive parameter of 32 or more characters (needed on a cluster or with Concurrent Tasks above 1) |
+| Upload URL | `#{gitlab.pypi.url}` |
+| Upload Secret | `#{gitlab.pypi.upload.secret}`, a sensitive parameter of 32 or more characters (needed on a cluster or with Concurrent Tasks above 1) |
 
 [![RoutePythonTransfer high properties](../images/pypi-route-high-properties.png)](../images/pypi-route-high-properties.png)
 
@@ -336,11 +336,11 @@ Add the seven `post:form:` properties with **Properties, +** as dynamic properti
 | Property | Value |
 |---|---|
 | HTTP Method | `POST` |
-| HTTP URL | `#{gitlab.pypi.high.url}` |
+| HTTP URL | `#{gitlab.pypi.url}` |
 | Socket Read Timeout | `5 mins` |
 | Socket Write Timeout | `5 mins` |
-| Request Username | `#{gitlab.pypi.high.username}` |
-| Request Password | `#{gitlab.pypi.high.token}` (shows as "Sensitive value set") |
+| Request Username | `#{gitlab.pypi.username}` |
+| Request Password | `#{gitlab.pypi.token}` (shows as "Sensitive value set") |
 | Request Multipart Form-Data Name | `content` |
 | Response Body Attribute Name | `pypi.response` |
 | Response Redirects Enabled | `False` |
@@ -438,7 +438,7 @@ Keep refused FlowFiles in place while you read `pypi.error` and the bulletin. Do
 | Mirror request job gets connection refused | ListenHTTP stopped, wrong port, or the ingress does not route the exact path to 9311 |
 | Every request lands in Rejected with `not a Python package request` | HTTP Headers for Attributes does not match `X-` headers, or the ingress strips them |
 | `request body does not match its X-Sha256` | The body changed in transit (a proxy re-encoding it), or a hand-made request hashed different bytes |
-| One wheel refused, `is not under ...` | Its url is outside Allowed URL Base. Check `#{gitlab.pypi.low.url}` (or, with a group index, `#{gitlab.pypi.low.project.url}`) matches the project the mirror publishes to. A group's simple pages link to the group files URL, the webhook to the project's: list both |
+| One wheel refused, `is not under ...` | Its url is outside Allowed URL Base. Check `#{gitlab.pypi.url}` (or, with a group index, `#{gitlab.pypi.project.url}`) matches the project the mirror publishes to. A group's simple pages link to the group files URL, the webhook to the project's: list both |
 | Fetch wheel `No Retry` with HTTP 401 or 403 | Token missing, expired or without read access to the low project |
 | A `text` resend refused | Index URL, Index Username or Index Password empty or wrong, or the file name is not on the index |
 | High `does not match its X-Sha256` | The bytes changed across the link. Resend the wheel from the low side |

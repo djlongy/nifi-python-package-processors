@@ -47,8 +47,8 @@ class PlanPythonTransfer(FlowFileTransform):
         name="Allowed URL Base",
         description=(
             "Every file url must start with one of these (whitespace or comma separated), such as "
-            "#{gitlab.pypi.low.url}/files/. With a group index add the project the mirror publishes to: "
-            "#{gitlab.pypi.low.project.url}/files/. Never taken from the request. Environment variables allowed."),
+            "#{gitlab.pypi.url}/files/. With a group index add the project the mirror publishes to: "
+            "#{gitlab.pypi.project.url}/files/. Never taken from the request. Environment variables allowed."),
         required=True,
         expression_language_scope=ExpressionLanguageScope.ENVIRONMENT)
     MAX_FILES = PropertyDescriptor(
@@ -72,7 +72,7 @@ class PlanPythonTransfer(FlowFileTransform):
         expression_language_scope=ExpressionLanguageScope.ENVIRONMENT)
     INDEX_PASSWORD = PropertyDescriptor(
         name="Index Password",
-        description="Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{gitlab.pypi.low.token}.",
+        description="Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{gitlab.pypi.token}.",
         sensitive=True)
     SSL_CONTEXT = PropertyDescriptor(
         name="SSL Context Service",

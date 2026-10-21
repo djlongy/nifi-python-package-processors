@@ -70,7 +70,7 @@ class RoutePythonTransfer(FlowFileTransform):
     UPLOAD_URL = PropertyDescriptor(
         name="Upload URL",
         description=(
-            "High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{gitlab.pypi.high.url}. An answer "
+            "High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{gitlab.pypi.url}. An answer "
             "from any other URL is refused, so attributes carried across the diode cannot pass as an upload. "
             "Environment variables allowed."),
         validators=[StandardValidators.URL_VALIDATOR],

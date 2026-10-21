@@ -32,7 +32,7 @@ RoutePythonTransfer success: auto-terminated (pypi.result uploaded or duplicate)
 every failure and InvokeHTTP Failure -> LogMessage "Rejected (inspect queue)", kept stopped
 ```
 
-On a cluster, or with Concurrent Tasks above 1 on the high RoutePythonTransfer, set **Upload Secret** to one sensitive parameter in the parameter context (for example `#{gitlab.pypi.high.upload.secret}`, made with `openssl rand -base64 36`), so every node signs with the same key. Route signs each wheel it sends to InvokeHTTP and trusts the answer only when the signature matches, so a FlowFile carried across the diode never counts as uploaded. NiFi may run each node and each concurrent task in its own Python process, and without a shared secret each makes its own key, which a restart forgets. An answer read by a process that did not sign it is then uploaded again and counts as duplicate. Different values per node behave the same way.
+On a cluster, or with Concurrent Tasks above 1 on the high RoutePythonTransfer, set **Upload Secret** to one sensitive parameter in the parameter context (for example `#{gitlab.pypi.upload.secret}`, made with `openssl rand -base64 36`), so every node signs with the same key. Route signs each wheel it sends to InvokeHTTP and trusts the answer only when the signature matches, so a FlowFile carried across the diode never counts as uploaded. NiFi may run each node and each concurrent task in its own Python process, and without a shared secret each makes its own key, which a restart forgets. An answer read by a process that did not sign it is then uploaded again and counts as duplicate. Different values per node behave the same way.
 
 The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the link), so neither side packs or unpacks. InvokeHTTP retries its own `Retry` relationship. Keep the default back pressure (10000) on every connection in a loop.
 
@@ -76,11 +76,11 @@ The request's own headers (`X-Registry`, `X-CI-Project`, `X-CI-Pipeline-Url`, `X
 <!-- properties:PlanPythonTransfer -->
 | Name | Required | Default | Description |
 |---|---|---|---|
-| Allowed URL Base | Yes | none | Every file url must start with one of these (whitespace or comma separated), such as #{gitlab.pypi.low.url}/files/. With a group index add the project the mirror publishes to: #{gitlab.pypi.low.project.url}/files/. Never taken from the request. Environment variables allowed. |
+| Allowed URL Base | Yes | none | Every file url must start with one of these (whitespace or comma separated), such as #{gitlab.pypi.url}/files/. With a group index add the project the mirror publishes to: #{gitlab.pypi.project.url}/files/. Never taken from the request. Environment variables allowed. |
 | Maximum Files | Yes | `1000` | Most wheels one request may name; more refuses the whole request. Default 1000. The mirror sends 200. |
 | Index URL | No | none | Text requests only: the low index, such as https://gitlab.example.com/api/v4/projects/12/packages/pypi, whose /simple/<project>/ pages give each wheel's url and sha256. No user:password in the URL. Empty (default): text requests are refused. Environment variables allowed. |
 | Index Username | No | none | User for Index URL, such as __token__ for a GitLab token. Empty (default): anonymous. Environment variables allowed. |
-| Index Password | No | none | Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{gitlab.pypi.low.token}. |
+| Index Password | No | none | Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{gitlab.pypi.token}. |
 | SSL Context Service | No | none | A StandardSSLContextService whose PKCS12 or JKS truststore holds the index's CA (it does not accept PEM). Its CAs add to the system store and SSL_CERT_FILE. Empty (default): only those are trusted. Its keystore is ignored. |
 | Request Timeout | Yes | `60` | Seconds an index page read may stall before the request fails. Default 60. Wheels are never read here. |
 <!-- /properties -->
@@ -91,7 +91,7 @@ The request's own headers (`X-Registry`, `X-CI-Project`, `X-CI-Pipeline-Url`, `X
 | Name | Required | Default | Description |
 |---|---|---|---|
 | Transfer Side | Yes | `Low` | Low (default): prepares downloads and labels verified wheels. High: checks wheels and reads upload answers. |
-| Upload URL | No | none | High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{gitlab.pypi.high.url}. An answer from any other URL is refused, so attributes carried across the diode cannot pass as an upload. Environment variables allowed. |
+| Upload URL | No | none | High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{gitlab.pypi.url}. An answer from any other URL is refused, so attributes carried across the diode cannot pass as an upload. Environment variables allowed. |
 | Already Uploaded Pattern | Yes | `^(400\|409) .*(already been taken\|already exists\|does not allow updating)` | High side: a regular expression on "<HTTP status> <response body>" (InvokeHTTP Response Body Attribute Name pypi.response) meaning the index already holds the file, so it counts as done. The default covers GitLab, PyPI, pypiserver, Artifactory and Nexus. |
 | Accepted Formats | Yes | `whl` | Package files this side lets through: whl (default) wheels only, sdist source distributions (name-version.tar.gz or .zip) only, or whl,sdist both. Anything else is always refused. Pip builds an sdist on install, running its setup code. |
 | Upload Secret | No | none | High side. Proves an upload answer came from this processor, not across the diode. One sensitive parameter of 32 or more random characters, the same on every node: set it on a cluster or with Concurrent Tasks above 1. Empty: each Python process keys its own, so another one uploads again (duplicate). |
