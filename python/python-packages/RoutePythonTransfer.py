@@ -44,13 +44,21 @@ class RoutePythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.4.2"
-        description = ("Routes Python wheels around native InvokeHTTP and CryptographicHashContent; it never reads a "
-                       "wheel. Low side: prepares each PlanPythonTransfer job for download (pypi.* attributes, HTTP URL "
-                       "${pypi.url}) and labels the downloaded wheel for the diode (filename, X-Sha256, X-Artifact-Type "
-                       "python-packages, X-Artifact-Format whl, X-Artifact-Action mirror) once its SHA-256 matches. High "
-                       "side: checks the wheel from the diode before upload and reads the index's answer after it; a file "
-                       "the index already holds counts as done. pypi.stage says which step a FlowFile is at.")
+        version = "0.5.0"
+        description = (
+            "Routes Python package files around native InvokeHTTP and CryptographicHashContent; it never reads one. "
+            "pypi.stage says which step a FlowFile is at. "
+            "LOW IN: a job from SplitJson on PlanPythonTransfer's $.jobs. OUT request: pypi.filename, pypi.name, "
+            "pypi.version, pypi.sha256, pypi.size, pypi.url, pypi.stage fetch, for InvokeHTTP GET ${pypi.url}. "
+            "IN again: InvokeHTTP Response after CryptographicHashContent (SHA-256). OUT success, once the bytes match "
+            "pypi.sha256: filename, X-Sha256, X-Artifact-Format whl or sdist, mime.type, pypi.stage sent. "
+            "X-Artifact-Type, X-Artifact-Action and the X-CI-* audit headers are the webhook's, inherited through "
+            "SplitJson, never set here. "
+            "HIGH IN: a file from the diode after CryptographicHashContent, with filename, X-Sha256, X-Artifact-Format "
+            "and an X-Artifact-Type starting python-packages. OUT request: pypi.name, pypi.version, pypi.filetype, "
+            "pypi.pyversion (from the file name, never the low side), pypi.stage upload, pypi.upload.key. IN again: "
+            "InvokeHTTP Original and No Retry. OUT success: pypi.result uploaded or duplicate. "
+            "Any refusal goes to failure with pypi.error.")
         tags = ["python", "pypi", "wheel", "package", "route", "diode", "gitlab", "streaming"]
 
     SIDE = PropertyDescriptor(

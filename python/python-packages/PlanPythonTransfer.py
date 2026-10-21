@@ -31,13 +31,16 @@ class PlanPythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.4.2"
-        description = ("Plans the transfer of Python wheels: checks a request (X-Artifact-Type python-packages-request, "
-                       "X-Artifact-Format json with X-Sha256 of the body, or text: wheel file names looked up in Index URL) "
-                       "and emits one JSON job list, {\"jobs\": [...]}, for SplitJson on $.jobs. Each job names a wheel's "
-                       "filename, name, version, sha256, size and url. It never reads a wheel: native InvokeHTTP downloads "
-                       "each one. A wheel whose url is not under Allowed URL Base, or whose filename or sha256 is malformed, "
-                       "keeps an error in its job, and RoutePythonTransfer refuses that wheel alone.")
+        version = "0.5.0"
+        description = (
+            "Plans the transfer of Python package files; it never reads one. "
+            "IN: a request with X-Artifact-Type python-packages-request and either X-Artifact-Format json (the body "
+            "gitlab-pypi-mirror POSTs, {\"registry\", \"files\": [{filename, name, version, sha256, size, url}]}, with "
+            "X-Sha256 of the body) or X-Artifact-Format text (file names, one per line, looked up in Index URL). "
+            "OUT success: the same FlowFile, every attribute kept, with content {\"jobs\": [{filename, name, version, "
+            "sha256, size, url}]} for SplitJson on $.jobs, mime.type application/json, pypi.job.count and pypi.refused.count. A file whose url is outside Allowed URL Base, or whose name "
+            "or sha256 is malformed, keeps an error in its job, and RoutePythonTransfer refuses that file alone. "
+            "OUT failure: the whole request refused (wrong labels, digest, too many files), with pypi.error.")
         tags = ["python", "pypi", "wheel", "package", "plan", "diode", "gitlab", "webhook"]
 
     ALLOWED_BASE = PropertyDescriptor(

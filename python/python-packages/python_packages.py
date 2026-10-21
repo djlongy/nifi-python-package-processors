@@ -22,7 +22,7 @@ SDIST = re.compile(r"([A-Za-z0-9][A-Za-z0-9._+!-]*)-([0-9][A-Za-z0-9._+!]*)[.](?
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 REQUEST_TYPE, REQUEST_FORMATS = "python-packages-request", ("json", "text")
-WHEEL_TYPE, WHEEL_FORMAT, WHEEL_ACTION = "python-packages", "whl", "mirror"
+WHEEL_TYPE, WHEEL_FORMAT = "python-packages", "whl"
 SDIST_FORMAT = "sdist"
 FIELDS = ("filename", "name", "version", "sha256", "size", "url")
 
@@ -264,14 +264,15 @@ def fetch_attributes(job):
 
 
 def fetched_attributes(attributes):
-    """The labels a fetched wheel crosses the diode with, once its bytes match the sha256 the request named."""
+    """The labels a fetched wheel crosses the diode with, once its bytes match the sha256 the request named.
+    X-Artifact-Type and X-Artifact-Action are the webhook's, inherited through SplitJson: only the format is set here,
+    because only the file name says whether it is a wheel or an sdist."""
     if attributes.get("invokehttp.request.url") != attributes.get("pypi.url"):
         raise TransferError(f"{attributes.get('pypi.filename')} was not fetched from its pypi.url")
     if attributes.get("content_SHA-256") != attributes.get("pypi.sha256"):
         raise TransferError(f"{attributes.get('pypi.filename')} does not match its sha256")
     return {"filename": attributes["pypi.filename"], "X-Sha256": attributes["pypi.sha256"],
-            "X-Artifact-Type": WHEEL_TYPE, "X-Artifact-Format": package_format(attributes["pypi.filename"]),
-            "X-Artifact-Action": WHEEL_ACTION,
+            "X-Artifact-Format": package_format(attributes["pypi.filename"]),
             "mime.type": "application/octet-stream", "pypi.stage": "sent"}
 
 
@@ -288,7 +289,7 @@ def arrived_attributes(attributes, secret=None):
     kind = package_format(attributes.get("filename") or "")
     if not kind:
         raise TransferError(f"{attributes.get('filename')!r} is not a wheel or source distribution file name")
-    if attributes.get("X-Artifact-Type") != WHEEL_TYPE or attributes.get("X-Artifact-Format") != kind:
+    if not (attributes.get("X-Artifact-Type") or "").startswith(WHEEL_TYPE) or attributes.get("X-Artifact-Format") != kind:
         raise TransferError(f"{attributes.get('filename')} is not labelled a Python {kind}")
     if attributes.get("content_SHA-256") != attributes.get("X-Sha256"):
         raise TransferError(f"{attributes.get('filename')} does not match its X-Sha256")

@@ -240,7 +240,7 @@ Start the high side first ([H7](#h7-start-and-verify-the-high-side)). Then start
 | Mirror request job | HTTP 200 per batch, and the ledger records each batch |
 | Plan wheels | One job list per request, `pypi.job.count` and `pypi.refused.count` set |
 | Fetch wheel and Hash wheel | One download and one hash per wheel |
-| `to diode` | One FlowFile per wheel, with `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl` |
+| `to diode` | One FlowFile per wheel, with `filename`, `X-Sha256`, `X-Artifact-Format` `whl`, and the webhook's `X-Artifact-Type` `python-packages-request` |
 | Queues into Rejected (inspect queue) | Empty after success. Any held FlowFile has `pypi.error` |
 
 ### L9. Resend from NiFi
@@ -260,7 +260,7 @@ The high side writes to the high index. It is built on the high NiFi instance, i
 
 How it works: each wheel arrives in `from diode` as a plain FlowFile with the attributes the low side set. `CryptographicHashContent` hashes it, `RoutePythonTransfer` checks that it is a wheel and that its bytes match `X-Sha256`, then `InvokeHTTP` posts it to the index with the standard upload form `twine` uses. `RoutePythonTransfer` reads the answer: uploaded, or already in the index, both count as done.
 
-**At work this group is reached by routing on `X-Artifact-Type`.** The high-side diode receiver delivers every artifact type into one place. A `RouteOnAttribute` there sends `X-Artifact-Type` = `python-packages` to this group's `from diode` port, for example with Routing Strategy `Route to Property name` and a dynamic property `python-packages` = `${X-Artifact-Type:equals('python-packages')}`. Container images and other types take their own routes.
+**At work this group is reached by routing on `X-Artifact-Type`.** The high-side diode receiver delivers every artifact type into one place. A `RouteOnAttribute` there sends an `X-Artifact-Type` matching `python-packages.*` (the webhook's `python-packages-request`, which every file inherits) to this group's `from diode` port, for example with Routing Strategy `Route to Property name` and a dynamic property `python-packages` = `${X-Artifact-Type:startsWith('python-packages')}`. Container images and other types take their own routes.
 
 ### High screenshot
 

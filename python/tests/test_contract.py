@@ -27,7 +27,7 @@ class MirrorContractTest(unittest.TestCase):
         self.assertEqual(sorted(self.headers), HEADERS)
         self.assertEqual(self.headers["X-Artifact-Type"], "python-packages-request")
 
-    def test_each_wheel_crosses_with_the_request_attributes_and_python_packages(self):
+    def test_each_wheel_crosses_with_the_request_attributes_type_and_action(self):
         plan = run(PlanPythonTransfer, FlowFile(self.body, **self.attributes), **{"Allowed URL Base": self.base})
         self.assertEqual(plan.relationship, "success", plan.attributes)
         jobs = json.loads(plan.contents)["jobs"]
@@ -42,8 +42,8 @@ class MirrorContractTest(unittest.TestCase):
                 labelled = run(RoutePythonTransfer, FlowFile(b"wheel", **fetched), **{"Transfer Side": "Low"})
                 self.assertEqual(labelled.relationship, "success", labelled.attributes)
                 out = fetched | labelled.attributes
-                self.assertEqual((out["X-Artifact-Type"], out["filename"]), ("python-packages", job["filename"]))
-                for kept in ("X-Registry", "X-CI-Project", "X-CI-Pipeline-Url", "X-CI-Commit-Sha"):
+                self.assertEqual((out["X-Artifact-Format"], out["filename"]), ("whl", job["filename"]))
+                for kept in ("X-Artifact-Type", "X-Artifact-Action", "X-Registry", "X-CI-Project", "X-CI-Pipeline-Url", "X-CI-Commit-Sha"):
                     self.assertEqual(out[kept], self.headers[kept])
 
 

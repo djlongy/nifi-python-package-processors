@@ -191,8 +191,7 @@ class LowRouteTest(unittest.TestCase):
         result = low(self.fetched())
         self.assertEqual(result.relationship, "success")
         self.assertEqual(result.attributes, {"filename": SIX["filename"], "X-Sha256": SIX["sha256"],
-                                             "X-Artifact-Type": "python-packages", "X-Artifact-Format": "whl",
-                                             "X-Artifact-Action": "mirror", "mime.type": "application/octet-stream",
+                                             "X-Artifact-Format": "whl", "mime.type": "application/octet-stream",
                                              "pypi.stage": "sent"})
 
     def test_a_wheel_that_does_not_match_its_sha256_fails(self):
@@ -210,7 +209,7 @@ class LowRouteTest(unittest.TestCase):
 class HighRouteTest(unittest.TestCase):
     def arrived(self, **overrides):
         return FlowFile(b"wheel", **({"filename": SIX["filename"], "X-Sha256": SIX["sha256"],
-                                      "content_SHA-256": SIX["sha256"], "X-Artifact-Type": "python-packages",
+                                      "content_SHA-256": SIX["sha256"], "X-Artifact-Type": "python-packages-request",
                                       "X-Artifact-Format": "whl", "pypi.stage": "sent", "uuid": "u-1",
                                       "pypi.name": "evil", "pypi.version": "6.6.6", "pypi.response": "low answer",
                                       "invokehttp.request.url": SIX["url"], "invokehttp.status.code": "200"} | overrides))

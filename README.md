@@ -40,6 +40,9 @@ The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the l
 
 ## Relationships
 
+In NiFi, right-click a processor and choose **View Documentation** (or open it from the Add Processor dialog) for what it reads, writes and routes, with example configurations.
+
+
 | Processor | Relationship | Meaning |
 |---|---|---|
 | PlanPythonTransfer | success | One JSON job list, `mime.type` `application/json`, with `pypi.job.count` and `pypi.refused.count`. Connect to SplitJson on `$.jobs`. |
@@ -53,7 +56,8 @@ The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the l
 | Attribute | Set by | Meaning |
 |---|---|---|
 | `pypi.filename`, `pypi.name`, `pypi.version`, `pypi.sha256`, `pypi.size`, `pypi.url` | Route (low) | The job; InvokeHTTP fetches `${pypi.url}`, the high InvokeHTTP posts `${pypi.name}` and `${pypi.version}` |
-| `filename`, `X-Sha256`, `X-Artifact-Type` `python-packages`, `X-Artifact-Format` `whl` (or `sdist`), `X-Artifact-Action` `mirror`, `mime.type` | Route (low, after the hash) | The labels the wheel crosses with; route on `X-Artifact-Type` on the high side |
+| `filename`, `X-Sha256`, `X-Artifact-Format` `whl` (or `sdist`), `mime.type` | Route (low, after the hash) | The labels the file crosses with. Only the file name says wheel or sdist, so Route sets the format |
+| `X-Artifact-Type` `python-packages-request`, `X-Artifact-Action`, `X-CI-*`, `X-Registry` | the webhook (ListenHTTP) | Inherited through Plan and SplitJson, never set by a processor. Route on `X-Artifact-Type` matching `python-packages.*` on the high side; the high Route refuses any type not starting `python-packages` |
 | `pypi.stage` | Route | `fetch`, `sent`, `upload`: which step a FlowFile is at |
 | `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by Upload Secret, or when that is empty by a random secret of this Python process. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
 | `pypi.result` | Route (high) | `uploaded` or `duplicate`. `duplicate` means the index already holds a file of that name; GitLab answers the same for the same bytes and for different ones, so compare the sha256 each side's simple page lists to prove the two sides match |
