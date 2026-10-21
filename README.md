@@ -32,7 +32,7 @@ RoutePythonTransfer success: auto-terminated (pypi.result uploaded or duplicate)
 every failure and InvokeHTTP Failure -> LogMessage "Rejected (inspect queue)", kept stopped
 ```
 
-On a cluster, or with Concurrent Tasks above 1 on the high RoutePythonTransfer, set **Upload Secret** to a sensitive parameter of 32 or more characters. NiFi may run each node and each concurrent task in its own Python process. Without a shared secret, a wheel that InvokeHTTP answers is read by a process that did not sign it, so it is uploaded again and counts as duplicate.
+On a cluster, or with Concurrent Tasks above 1 on the high RoutePythonTransfer, set **Upload Secret** to one sensitive parameter in the parameter context (for example `#{pypi.upload.secret}`, made with `openssl rand -base64 36`), so every node signs with the same key. Route signs each wheel it sends to InvokeHTTP and trusts the answer only when the signature matches, so a FlowFile carried across the diode never counts as uploaded. NiFi may run each node and each concurrent task in its own Python process, and without a shared secret each makes its own key, which a restart forgets. An answer read by a process that did not sign it is then uploaded again and counts as duplicate. Different values per node behave the same way.
 
 The diode carries each FlowFile with its attributes (FlowFile Stream v3 at the link), so neither side packs or unpacks. InvokeHTTP retries its own `Retry` relationship. Keep the default back pressure (10000) on every connection in a loop.
 
@@ -90,7 +90,7 @@ The request's own headers (`X-Registry`, `X-CI-Project`, `X-CI-Pipeline-Url`, `X
 | Upload URL | No | none | High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{high.pypi.url}. An answer from any other URL is refused, so attributes carried across the diode cannot pass as an upload. Environment variables allowed. |
 | Already Uploaded Pattern | Yes | `^(400\|409) .*(already been taken\|already exists\|does not allow updating)` | High side: a regular expression on "<HTTP status> <response body>" (InvokeHTTP Response Body Attribute Name pypi.response) meaning the index already holds the file, so it counts as done. The default covers GitLab, PyPI, pypiserver, Artifactory and Nexus. |
 | Accepted Formats | Yes | `whl` | Package files this side lets through: whl (default) wheels only, sdist source distributions (name-version.tar.gz or .zip) only, or whl,sdist both. Anything else is always refused. Pip builds an sdist on install, running its setup code. |
-| Upload Secret | No | none | High side: 32 or more characters every node and task signs pypi.upload.key with, as a sensitive parameter. Set it on a cluster or with Concurrent Tasks above 1. Empty (default): each Python process makes its own, so a wheel another process sent is uploaded again and counts as duplicate. |
+| Upload Secret | No | none | High side. Proves an upload answer came from this processor, not across the diode. One sensitive parameter of 32 or more random characters, the same on every node: set it on a cluster or with Concurrent Tasks above 1. Empty: each Python process keys its own, so another one uploads again (duplicate). |
 <!-- /properties -->
 
 ## TLS and private CAs

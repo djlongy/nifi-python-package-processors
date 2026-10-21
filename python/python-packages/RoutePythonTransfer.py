@@ -44,7 +44,7 @@ class RoutePythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.4.0"
+        version = "0.4.1"
         description = ("Routes Python wheels around native InvokeHTTP and CryptographicHashContent; it never reads a "
                        "wheel. Low side: prepares each PlanPythonTransfer job for download (pypi.* attributes, HTTP URL "
                        "${pypi.url}) and labels the downloaded wheel for the diode (filename, X-Sha256, X-Artifact-Type "
@@ -90,9 +90,9 @@ class RoutePythonTransfer(FlowFileTransform):
     UPLOAD_SECRET = PropertyDescriptor(
         name="Upload Secret",
         description=(
-            "High side: 32 or more characters every node and task signs pypi.upload.key with, as a sensitive "
-            "parameter. Set it on a cluster or with Concurrent Tasks above 1. Empty (default): each Python process "
-            "makes its own, so a wheel another process sent is uploaded again and counts as duplicate."),
+            "High side. Proves an upload answer came from this processor, not across the diode. One sensitive "
+            "parameter of 32 or more random characters, the same on every node: set it on a cluster or with Concurrent "
+            "Tasks above 1. Empty: each Python process keys its own, so another one uploads again (duplicate)."),
         sensitive=True)
 
     PROPERTIES = [SIDE, UPLOAD_URL, ALREADY_THERE, ACCEPTED, UPLOAD_SECRET]
