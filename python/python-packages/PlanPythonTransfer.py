@@ -31,7 +31,7 @@ class PlanPythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.5.0"
+        version = "0.5.1"
         description = (
             "Plans the transfer of Python package files; it never reads one. "
             "IN: a request with X-Artifact-Type python-packages-request and either X-Artifact-Format json (the body "
@@ -46,9 +46,9 @@ class PlanPythonTransfer(FlowFileTransform):
     ALLOWED_BASE = PropertyDescriptor(
         name="Allowed URL Base",
         description=(
-            "Every wheel url must start with one of these (whitespace or comma separated), such as "
-            "#{low.pypi.url}/files/. A group index links to its projects: give https://gitlab.example.com/api/v4/projects/ "
-            "or each project's files URL. Never taken from the request. Environment variables allowed."),
+            "Every file url must start with one of these (whitespace or comma separated), such as "
+            "#{gitlab.pypi.low.url}/files/. With a group index add the project the mirror publishes to: "
+            "#{gitlab.pypi.low.project.url}/files/. Never taken from the request. Environment variables allowed."),
         required=True,
         expression_language_scope=ExpressionLanguageScope.ENVIRONMENT)
     MAX_FILES = PropertyDescriptor(
@@ -72,7 +72,7 @@ class PlanPythonTransfer(FlowFileTransform):
         expression_language_scope=ExpressionLanguageScope.ENVIRONMENT)
     INDEX_PASSWORD = PropertyDescriptor(
         name="Index Password",
-        description="Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{low.pypi.token}.",
+        description="Password or token for Index URL. Empty (default): none sent. Sensitive: reference a parameter, such as #{gitlab.pypi.low.token}.",
         sensitive=True)
     SSL_CONTEXT = PropertyDescriptor(
         name="SSL Context Service",

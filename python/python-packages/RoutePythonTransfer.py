@@ -44,7 +44,7 @@ class RoutePythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.5.0"
+        version = "0.5.1"
         description = (
             "Routes Python package files around native InvokeHTTP and CryptographicHashContent; it never reads one. "
             "pypi.stage says which step a FlowFile is at. "
@@ -70,7 +70,7 @@ class RoutePythonTransfer(FlowFileTransform):
     UPLOAD_URL = PropertyDescriptor(
         name="Upload URL",
         description=(
-            "High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{high.pypi.url}. An answer "
+            "High side, required there: exactly the upload InvokeHTTP's HTTP URL, such as #{gitlab.pypi.high.url}. An answer "
             "from any other URL is refused, so attributes carried across the diode cannot pass as an upload. "
             "Environment variables allowed."),
         validators=[StandardValidators.URL_VALIDATOR],
