@@ -72,7 +72,7 @@ The request's own headers (`X-Registry`, `X-CI-Project`, `X-CI-Pipeline-Url`, `X
 <!-- properties:PlanPythonTransfer -->
 | Name | Required | Default | Description |
 |---|---|---|---|
-| Allowed URL Base | Yes | none | Every wheel url must start with this, such as https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/ or #{low.pypi.url}/files/. Never taken from the request. Required. Environment variables allowed. |
+| Allowed URL Base | Yes | none | Every wheel url must start with one of these (whitespace or comma separated), such as #{low.pypi.url}/files/. A group index links to its projects: give https://gitlab.example.com/api/v4/projects/ or each project's files URL. Never taken from the request. Environment variables allowed. |
 | Maximum Files | Yes | `1000` | Most wheels one request may name; more refuses the whole request. Default 1000. The mirror sends 200. |
 | Index URL | No | none | Text requests only: the low index, such as https://gitlab.example.com/api/v4/projects/12/packages/pypi, whose /simple/<project>/ pages give each wheel's url and sha256. No user:password in the URL. Empty (default): text requests are refused. Environment variables allowed. |
 | Index Username | No | none | User for Index URL, such as __token__ for a GitLab token. Empty (default): anonymous. Environment variables allowed. |

@@ -63,6 +63,17 @@ class PlanTest(unittest.TestCase):
                 self.assertTrue(python_packages.url_outside(url, base))
         self.assertFalse(python_packages.url_outside(SIX["url"], base))
 
+    def test_several_allowed_bases_and_a_group_of_projects(self):
+        bases = f"https://other.example/files/, {LOW}/files/"
+        self.assertFalse(python_packages.url_outside(SIX["url"], bases))
+        self.assertFalse(python_packages.url_outside("https://other.example/files/x.whl", bases))
+        self.assertTrue(python_packages.url_outside("https://evil.example/files/x.whl", bases))
+        projects = "https://git.test/api/v4/projects/"
+        self.assertFalse(python_packages.url_outside(SIX["url"], projects))
+        self.assertTrue(python_packages.url_outside("https://git.test/api/v4/groups/1/x.whl", projects))
+        self.assertIn("is not under https://other.example/files/ or", python_packages.entry_error(
+            {k: str(v) for k, v in SIX.items()} | {"url": "https://evil.example/x.whl"}, bases))
+
     def test_a_wheel_outside_the_allowlist_is_kept_with_its_error_and_the_rest_still_go(self):
         foreign = SIX | {"url": "https://evil.test/six.whl"}
         bad_name, bad_digest = SIX | {"filename": "six.tar.gz"}, SIX | {"sha256": "A" * 64}

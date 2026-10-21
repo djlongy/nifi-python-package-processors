@@ -6,7 +6,8 @@ from nifiapi.properties import ExpressionLanguageScope, PropertyDescriptor, Stan
 from nifiapi.relationship import Relationship
 
 from nifi_attributes import Attributes, evaluate
-from python_packages import TransferError, index_lookup, plan_jobs, trust_context, trusted_der, web_opener
+from python_packages import (TransferError, allowed_bases, index_lookup, plan_jobs, trust_context, trusted_der,
+                             web_opener)
 
 ERROR = "pypi.error"
 HEADERS = ("X-Artifact-Type", "X-Artifact-Format", "X-Sha256")
@@ -30,7 +31,7 @@ class PlanPythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.4.1"
+        version = "0.4.2"
         description = ("Plans the transfer of Python wheels: checks a request (X-Artifact-Type python-packages-request, "
                        "X-Artifact-Format json with X-Sha256 of the body, or text: wheel file names looked up in Index URL) "
                        "and emits one JSON job list, {\"jobs\": [...]}, for SplitJson on $.jobs. Each job names a wheel's "
@@ -42,8 +43,9 @@ class PlanPythonTransfer(FlowFileTransform):
     ALLOWED_BASE = PropertyDescriptor(
         name="Allowed URL Base",
         description=(
-            "Every wheel url must start with this, such as https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/"
-            " or #{low.pypi.url}/files/. Never taken from the request. Required. Environment variables allowed."),
+            "Every wheel url must start with one of these (whitespace or comma separated), such as "
+            "#{low.pypi.url}/files/. A group index links to its projects: give https://gitlab.example.com/api/v4/projects/ "
+            "or each project's files URL. Never taken from the request. Environment variables allowed."),
         required=True,
         expression_language_scope=ExpressionLanguageScope.ENVIRONMENT)
     MAX_FILES = PropertyDescriptor(
@@ -105,7 +107,8 @@ class PlanPythonTransfer(FlowFileTransform):
         opener = web_opener(trust_context(trusted_der(context.getProperty(self.SSL_CONTEXT))))
         return index_lookup(index, evaluate(context.getProperty(self.INDEX_USERNAME), environment) or "",
                             context.getProperty(self.INDEX_PASSWORD).getValue() or "",
-                            int(context.getProperty(self.TIMEOUT).getValue()), opener)
+                            int(context.getProperty(self.TIMEOUT).getValue()), opener,
+                            allowed_bases(evaluate(context.getProperty(self.ALLOWED_BASE), Attributes())))
 
     def transform(self, context, flowfile):
         attributes = {name: flowfile.getAttribute(name) for name in HEADERS}

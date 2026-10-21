@@ -171,17 +171,24 @@ def check_index_url(index_url):
     return index_url.rstrip("/")
 
 
-def same_origin(link, index_url):
-    """A link under the index's own path, on the index's scheme and host. GitLab writes its external_url into
-    the simple page, which need not be the address NiFi reaches it on, so the allowlist would refuse every link.
-    A link elsewhere is returned as it is, for the allowlist to refuse."""
+def allowed_bases(text):
+    """The Allowed URL Base property: one or more bases, separated by whitespace or commas."""
+    return tuple(base for base in re.split(r"[\s,]+", text or "") if base)
+
+
+def same_origin(link, index_url, bases=()):
+    """A link under the index's own path, or under an allowed base's path, on the index's scheme and host. GitLab
+    writes its external_url into the simple page, which need not be the address NiFi reaches it on, so the allowlist
+    would refuse every link; a group index links to /api/v4/projects/<id>/packages/pypi/files/, not under its own
+    path, so the allowed bases count too. A link elsewhere is returned as it is, for the allowlist to refuse."""
     target, index = urllib.parse.urlsplit(link), urllib.parse.urlsplit(index_url)
-    if target.path.startswith(index.path.rstrip("/") + "/"):
+    paths = [index.path.rstrip("/") + "/"] + [urllib.parse.urlsplit(base).path for base in bases]
+    if any(target.path.startswith(path) for path in paths if path):
         return urllib.parse.urlunsplit((index.scheme, index.netloc, target.path, target.query, ""))
     return link
 
 
-def index_lookup(index_url, username="", password="", timeout=60, opener=None):
+def index_lookup(index_url, username="", password="", timeout=60, opener=None, bases=()):
     """lookup(filename) for text requests: reads <index>/simple/<project>/ (PEP 503, as GitLab, PyPI, pypiserver,
     Artifactory and Nexus serve it) and returns the entry for that file, its sha256 from the link's #sha256=.
     A file the index does not list comes back with an error the allowlist reports."""
@@ -205,7 +212,7 @@ def index_lookup(index_url, username="", password="", timeout=60, opener=None):
             pages[project] = {}
             for href in links.hrefs:
                 target, _, fragment = urllib.parse.urljoin(url, href).partition("#")
-                target = same_origin(target, index_url)
+                target = same_origin(target, index_url, bases)
                 pages[project][urllib.parse.unquote(target.rsplit("/", 1)[-1])] = (
                     target, fragment[len("sha256="):] if fragment.startswith("sha256=") else "")
         return pages[project]
@@ -225,11 +232,13 @@ UNSAFE_URL = re.compile(r"%2e|%2f|%5c|\\|[?#]", re.IGNORECASE)
 
 
 def url_outside(url, allowed_base):
-    """True when url could reach anything but a file under allowed_base: another scheme or host, a dot segment
-    (../ or ./), an encoded dot, slash or backslash, a query or a fragment."""
-    parts, base = urllib.parse.urlsplit(url), urllib.parse.urlsplit(allowed_base)
-    return (not url.startswith(allowed_base) or (parts.scheme, parts.netloc) != (base.scheme, base.netloc)
-            or bool(UNSAFE_URL.search(url)) or any(segment in (".", "..") for segment in parts.path.split("/")))
+    """True when url could reach anything but a file under one of the allowed bases (a string, or several): another
+    scheme or host, a dot segment (../ or ./), an encoded dot, slash or backslash, a query or a fragment."""
+    bases = allowed_bases(allowed_base) if isinstance(allowed_base, str) else tuple(allowed_base)
+    parts = urllib.parse.urlsplit(url)
+    under = any(url.startswith(base) and (parts.scheme, parts.netloc) == urllib.parse.urlsplit(base)[:2] for base in bases)
+    return (not under or bool(UNSAFE_URL.search(url))
+            or any(segment in (".", "..") for segment in parts.path.split("/")))
 
 
 def entry_error(job, allowed_base):
@@ -237,7 +246,7 @@ def entry_error(job, allowed_base):
     if not job["url"]:
         return f"{job['filename']!r} is not in the index"
     if url_outside(job["url"], allowed_base):
-        return f"{job['filename'] or job['url']!r} is not under {allowed_base}"
+        return f"{job['filename'] or job['url']!r} is not under {' or '.join(allowed_bases(allowed_base))}"
     if not package_format(job["filename"]):
         return f"{job['filename']!r} is not a wheel or source distribution file name"
     if urllib.parse.unquote(job["url"].rsplit("/", 1)[-1]) != job["filename"]:

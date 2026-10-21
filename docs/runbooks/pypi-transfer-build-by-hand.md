@@ -52,7 +52,7 @@ On the low NiFi instance, create a **Process Group** (the reference uses `pypi c
 | `gitlab.low.token` | **Yes** | A token that can read the low project's packages |
 | `request.path` | No | `pypi-request`, the listener's base path |
 
-The index address, user and token come from this context, **never from the request**. The wheel urls in a request must start with `#{gitlab.low.pypi.url}/files/`, so a request cannot point NiFi at another host.
+The index address, user and token come from this context, **never from the request**. The wheel urls in a request must start with `#{gitlab.low.pypi.url}/files/`, so a request cannot point NiFi at another host. For a group index (`https://gitlab.example.com/api/v4/groups/202/-/packages/pypi`), whose simple pages link to each project's files, set Allowed URL Base to `https://gitlab.example.com/api/v4/projects/` instead, or list each project's files URL separated by spaces or commas.
 
 **Private CA.** If the index certificate chains to a public CA, leave every **SSL Context Service** blank, as the reference flow does. For a private CA, follow [TLS and private CAs](../../README.md#tls-and-private-cas) and select the service on `PlanPythonTransfer` and on `InvokeHTTP`. RoutePythonTransfer makes no connection and has no SSL property.
 
@@ -434,7 +434,7 @@ Keep refused FlowFiles in place while you read `pypi.error` and the bulletin. Do
 | Mirror request job gets connection refused | ListenHTTP stopped, wrong port, or the ingress does not route the exact path to 9311 |
 | Every request lands in Rejected with `not a Python package request` | HTTP Headers for Attributes does not match `X-` headers, or the ingress strips them |
 | `request body does not match its X-Sha256` | The body changed in transit (a proxy re-encoding it), or a hand-made request hashed different bytes |
-| One wheel refused, `is not under ...` | Its url is outside Allowed URL Base. Check `#{gitlab.low.pypi.url}` matches the project the mirror publishes to |
+| One wheel refused, `is not under ...` | Its url is outside Allowed URL Base. Check `#{gitlab.low.pypi.url}` matches the project the mirror publishes to. With a group index, Allowed URL Base must be the `/api/v4/projects/` prefix or the project files URLs, since a group's simple pages link to project files |
 | Fetch wheel `No Retry` with HTTP 401 or 403 | Token missing, expired or without read access to the low project |
 | A `text` resend refused | Index URL, Index Username or Index Password empty or wrong, or the file name is not on the index |
 | High `does not match its X-Sha256` | The bytes changed across the link. Resend the wheel from the low side |

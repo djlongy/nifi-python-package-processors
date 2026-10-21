@@ -61,6 +61,13 @@ class OriginTest(unittest.TestCase):
         for elsewhere in ("https://evil.example/x.whl", "https://git.example.internal/api/v4/projects/2/packages/pypi/x.whl"):
             self.assertEqual(same_origin(elsewhere, index), elsewhere)
 
+    def test_a_group_index_links_to_its_projects_under_an_allowed_base(self):
+        group = "https://git.example.com/api/v4/groups/202/-/packages/pypi"
+        link = "https://git.example.internal/api/v4/projects/134/packages/pypi/files/ab/zstandard-0.25.0-py3-none-any.whl"
+        bases = ("https://git.example.com/api/v4/projects/",)
+        self.assertEqual(same_origin(link, group, bases), link.replace("git.example.internal", "git.example.com"))
+        self.assertEqual(same_origin(link, group), link)
+
 
 class Redirecting(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
