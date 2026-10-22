@@ -45,6 +45,11 @@ class MirrorContractTest(unittest.TestCase):
                 self.assertEqual((out["X-Artifact-Format"], out["filename"]), ("whl", job["filename"]))
                 for kept in ("X-Artifact-Type", "X-Artifact-Action", "X-Registry", "X-CI-Project", "X-CI-Pipeline-Url", "X-CI-Commit-Sha"):
                     self.assertEqual(out[kept], self.headers[kept])
+                arrived = run(RoutePythonTransfer, FlowFile(b"wheel", **out), **{"Transfer Side": "High",
+                                                                                 "Upload URL": "https://high.test/pypi"})
+                self.assertEqual(arrived.relationship, "request", arrived.attributes)
+                self.assertEqual(arrived.attributes["pypi.requires_python"], job["requires_python"])
+        self.assertEqual([job["requires_python"] for job in jobs], [">=2.7, !=3.0.*, !=3.1.*, !=3.2.*", ""])
 
 
 if __name__ == "__main__":

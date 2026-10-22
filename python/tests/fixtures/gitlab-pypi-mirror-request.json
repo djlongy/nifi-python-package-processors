@@ -1,5 +1,5 @@
 {
- "body": "{\"registry\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi\", \"files\": [{\"filename\": \"six-1.17.0-py2.py3-none-any.whl\", \"name\": \"six\", \"version\": \"1.17.0\", \"sha256\": \"76c1f3b8c6106243a97620b63fb32351efe270f385c1c2257a1cfeb7441ec0b0\", \"size\": 128, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/76c1f3b8c6106243a97620b63fb32351efe270f385c1c2257a1cfeb7441ec0b0/six-1.17.0-py2.py3-none-any.whl\"}, {\"filename\": \"crcmod-1.7-py3-none-any.whl\", \"name\": \"crcmod\", \"version\": \"1.7\", \"sha256\": \"c09fddee60bc61023de5911d11cbd231ef5dc4f9d8f6d270716d7103f34b6fa1\", \"size\": 131, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/c09fddee60bc61023de5911d11cbd231ef5dc4f9d8f6d270716d7103f34b6fa1/crcmod-1.7-py3-none-any.whl\"}]}",
+ "body": "{\"registry\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi\", \"files\": [{\"filename\": \"six-1.17.0-py2.py3-none-any.whl\", \"name\": \"six\", \"version\": \"1.17.0\", \"sha256\": \"96a8ddef8dafe9c5571c0090eb550eb75c1616d39808deb2e8780a11d40ceb89\", \"size\": 254, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/96a8ddef8dafe9c5571c0090eb550eb75c1616d39808deb2e8780a11d40ceb89/six-1.17.0-py2.py3-none-any.whl\", \"requires_python\": \">=2.7, !=3.0.*, !=3.1.*, !=3.2.*\"}, {\"filename\": \"crcmod-1.7-py3-none-any.whl\", \"name\": \"crcmod\", \"version\": \"1.7\", \"sha256\": \"680110664872dea383f597ce70274cb91e2367bf2c87e055e803b577abe33fbc\", \"size\": 204, \"url\": \"https://gitlab.example.com/api/v4/projects/12/packages/pypi/files/680110664872dea383f597ce70274cb91e2367bf2c87e055e803b577abe33fbc/crcmod-1.7-py3-none-any.whl\"}]}",
  "headers": {
   "Content-Type": "application/json",
   "Filename": "pypi-request-20261021T000000000Z.json",
@@ -11,6 +11,6 @@
   "X-CI-Project": "platform/pypi-mirror",
   "X-File-Count": "2",
   "X-Registry": "https://gitlab.example.com/api/v4/projects/12/packages/pypi",
-  "X-Sha256": "ac0a7998c9c7f511dfc4f4c8099661cbcd8d29cc27a8afcc1fa15bce999ac1b8"
+  "X-Sha256": "9be2d1b5adb289c5f2f28452656cb76b8bbaf12c793107e1895eb494466921ef"
  }
 }

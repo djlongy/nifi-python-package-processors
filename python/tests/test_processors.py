@@ -13,7 +13,8 @@ from RoutePythonTransfer import RoutePythonTransfer
 LOW = "https://git.test/api/v4/projects/1/packages/pypi"
 HIGH = "https://git.test/api/v4/projects/2/packages/pypi"
 SIX = {"filename": "six-1.17.0-py2.py3-none-any.whl", "name": "six", "version": "1.17.0", "sha256": "a" * 64,
-       "size": 11050, "url": f"{LOW}/files/{'a' * 64}/six-1.17.0-py2.py3-none-any.whl"}
+       "size": 11050, "url": f"{LOW}/files/{'a' * 64}/six-1.17.0-py2.py3-none-any.whl",
+       "requires_python": ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"}
 
 
 class FlowFile:
@@ -53,6 +54,14 @@ class PlanTest(unittest.TestCase):
         jobs = json.loads(result.contents)["jobs"]
         self.assertEqual(jobs[0], {key: str(value) for key, value in SIX.items()})
         self.assertEqual((result.attributes["pypi.job.count"], result.attributes["pypi.refused.count"]), ("2", "0"))
+
+    def test_a_requires_python_that_is_not_a_specifier_set_is_dropped_on_the_low_side(self):
+        for value in (">=3.8,\r\n<4", ">=3.8\r\nX-Injected: 1", [">=3.8"], 3.8, ">=3.8," * 40):
+            with self.subTest(value=value):
+                jobs = json.loads(plan(request([SIX | {"requires_python": value}])).contents)["jobs"]
+                self.assertEqual(jobs[0]["requires_python"], "")
+        jobs = json.loads(plan(request([SIX | {"requires_python": ">=3.8,\t<4"}])).contents)["jobs"]
+        self.assertEqual(jobs[0]["requires_python"], ">=3.8,\t<4")
 
     def test_a_url_that_only_starts_with_the_base_is_refused(self):
         base = f"{LOW}/files/"
@@ -106,7 +115,8 @@ class PlanTest(unittest.TestCase):
         self.assertIn("more than Maximum Files (2)", result.attributes["pypi.error"])
 
 
-SIMPLE = (f'<html><body><a href="{LOW}/files/{"a" * 64}/six-1.17.0-py2.py3-none-any.whl#sha256={"a" * 64}">'
+SIMPLE = (f'<html><body><a href="{LOW}/files/{"a" * 64}/six-1.17.0-py2.py3-none-any.whl#sha256={"a" * 64}" '
+          'data-requires-python="&gt;=2.7, !=3.0.*, !=3.1.*, !=3.2.*">'
           'six-1.17.0-py2.py3-none-any.whl</a></body></html>')
 
 
@@ -138,7 +148,7 @@ class TextRequestTest(unittest.TestCase):
     def test_each_named_wheel_gets_its_url_and_sha256_from_the_index(self):
         jobs, index = self.plan(text_request("# resend\nsix-1.17.0-py2.py3-none-any.whl\n\n"))
         self.assertEqual(jobs, [{"filename": SIX["filename"], "name": "six", "version": "1.17.0", "sha256": "a" * 64,
-                                 "size": "", "url": SIX["url"]}])
+                                 "size": "", "url": SIX["url"], "requires_python": SIX["requires_python"]}])
         self.assertEqual(index.asked, [(f"{LOW}/simple/six/", "Basic X190b2tlbl9fOnNlY3JldA==")])
 
     def test_a_wheel_the_index_does_not_list_is_refused_alone(self):
@@ -191,8 +201,12 @@ class LowRouteTest(unittest.TestCase):
         result = low(self.fetched())
         self.assertEqual(result.relationship, "success")
         self.assertEqual(result.attributes, {"filename": SIX["filename"], "X-Sha256": SIX["sha256"],
-                                             "X-Artifact-Format": "whl", "mime.type": "application/octet-stream",
-                                             "pypi.stage": "sent"})
+                                             "X-Artifact-Format": "whl", "X-Requires-Python": SIX["requires_python"],
+                                             "mime.type": "application/octet-stream", "pypi.stage": "sent"})
+
+    def test_a_requires_python_set_after_the_plan_is_checked_again_before_the_diode(self):
+        result = low(self.fetched(**{"pypi.requires_python": ">=3.8,\r\n<4"}))
+        self.assertEqual((result.relationship, result.attributes["X-Requires-Python"]), ("success", ""))
 
     def test_a_wheel_that_does_not_match_its_sha256_fails(self):
         result = low(self.fetched(**{"content_SHA-256": "b" * 64}))
@@ -210,7 +224,8 @@ class HighRouteTest(unittest.TestCase):
     def arrived(self, **overrides):
         return FlowFile(b"wheel", **({"filename": SIX["filename"], "X-Sha256": SIX["sha256"],
                                       "content_SHA-256": SIX["sha256"], "X-Artifact-Type": "python-packages-request",
-                                      "X-Artifact-Format": "whl", "pypi.stage": "sent", "uuid": "u-1",
+                                      "X-Artifact-Format": "whl", "X-Requires-Python": ">=3.7", "pypi.stage": "sent",
+                                      "uuid": "u-1", "pypi.requires_python": ">=3.7",
                                       "pypi.name": "evil", "pypi.version": "6.6.6", "pypi.response": "low answer",
                                       "invokehttp.request.url": SIX["url"], "invokehttp.status.code": "200"} | overrides))
 
@@ -219,9 +234,18 @@ class HighRouteTest(unittest.TestCase):
         self.assertEqual(result.relationship, "request")
         self.assertEqual({k: v for k, v in result.attributes.items() if k != "pypi.upload.key"},
                          {"pypi.stage": "upload", "pypi.name": "six", "pypi.version": "1.17.0", "pypi.response": "",
+                          "pypi.requires_python": ">=3.7",
                           "pypi.filetype": "bdist_wheel", "pypi.pyversion": "py2.py3", "invokehttp.status.code": "",
                           "invokehttp.request.url": "", "invokehttp.response.url": ""})
         self.assertEqual(len(result.attributes["pypi.upload.key"]), 64)
+
+    def test_requires_python_is_uploaded_only_when_it_is_a_specifier_set(self):
+        for label, expected in (("~=3.10", "~=3.10"), (" >=3.8, <4 ", ">=3.8, <4"), ("===3.12.1", "===3.12.1"),
+                                (None, ""), ("", ""), ("3.8", ""), (">=3.8; rm -rf", ""), (">=3.8\n<4", ""), (">=3.8,\r\n<4", ""), (">=3.8,\n <4", ""),
+                                (">=3.8," * 40, ""), (", ".join([">=3.8"] * 40), "")):
+            with self.subTest(label=label):
+                result = high(self.arrived(**{"X-Requires-Python": label}))
+                self.assertEqual((result.relationship, result.attributes["pypi.requires_python"]), ("request", expected))
 
     def test_a_wheel_that_is_not_one_fails(self):
         cases = {"type": {"X-Artifact-Type": "container-images"}, "format": {"X-Artifact-Format": "tar"},

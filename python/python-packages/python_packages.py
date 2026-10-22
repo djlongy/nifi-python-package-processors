@@ -24,7 +24,17 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 REQUEST_TYPE, REQUEST_FORMATS = "python-packages-request", ("json", "text")
 WHEEL_TYPE, WHEEL_FORMAT = "python-packages", "whl"
 SDIST_FORMAT = "sdist"
-FIELDS = ("filename", "name", "version", "sha256", "size", "url")
+FIELDS = ("filename", "name", "version", "sha256", "size", "url", "requires_python")
+# PEP 440 specifiers joined by commas, as Requires-Python holds them, such as ">=3.8, !=3.9.*". Spaces and tabs
+# only: a CR or LF would end the header the value crosses the diode in.
+SPECIFIER = r"[ \t]*(?:~=|===?|!=|<=?|>=?)[ \t]*[0-9A-Za-z.*+!-]+[ \t]*"
+REQUIRES_PYTHON = re.compile(rf"{SPECIFIER}(?:,{SPECIFIER})*")
+
+
+def requires_python(value):
+    """value when it is a PEP 440 specifier set of at most 200 characters, else "": a file goes on without it."""
+    value = value.strip() if isinstance(value, str) else ""
+    return value if len(value) <= 200 and REQUIRES_PYTHON.fullmatch(value) else ""
 
 
 class TransferError(Exception):
@@ -35,8 +45,8 @@ def plan_jobs(body, attributes, allowed_base, max_files, lookup=None):
     """One job per wheel the request names.
 
     X-Artifact-Format json: the mirror's request body {"registry", "files": [{filename, name, version, sha256, size,
-    url}]}, with X-Sha256 of the body. X-Artifact-Format text (a resend typed into GenerateFlowFile): one wheel file
-    name per line, # comments allowed; lookup(filename) finds its url and sha256 in the low index, and X-Sha256 is
+    url, requires_python}]}, requires_python optional, with X-Sha256 of the body. X-Artifact-Format text (a resend typed into GenerateFlowFile): one wheel file
+    name per line, # comments allowed; lookup(filename) finds its url, sha256 and requires_python in the low index, and X-Sha256 is
     checked only when given.
 
     The whole request is refused when its headers, its X-Sha256 or its body are wrong. A single wheel that fails the
@@ -55,6 +65,8 @@ def plan_jobs(body, attributes, allowed_base, max_files, lookup=None):
     jobs = []
     for entry in files:
         job = {key: str(entry.get(key) or "") for key in FIELDS} if isinstance(entry, dict) else dict.fromkeys(FIELDS, "")
+        # Checked here, on the low side, as well as on the high one: it crosses the diode as a header.
+        job["requires_python"] = requires_python(entry.get("requires_python") if isinstance(entry, dict) else "")
         error = entry_error(job, allowed_base)
         jobs.append({**job, "error": error} if error else job)
     return jobs
@@ -111,15 +123,16 @@ def format_refused(filename, accepted):
 
 
 class _Links(html.parser.HTMLParser):
-    """The <a href> values of a PEP 503 simple page."""
+    """The (href, data-requires-python) of each <a> on a PEP 503 simple page, the second unescaped or ""."""
 
     def __init__(self):
         super().__init__()
         self.hrefs = []
 
     def handle_starttag(self, tag, attrs):
-        if tag == "a":
-            self.hrefs += [value for key, value in attrs if key == "href" and value]
+        attrs = dict(attrs)
+        if tag == "a" and attrs.get("href"):
+            self.hrefs.append((attrs["href"], attrs.get("data-requires-python") or ""))
 
 
 def trusted_der(property_value):
@@ -190,7 +203,8 @@ def same_origin(link, index_url, bases=()):
 
 def index_lookup(index_url, username="", password="", timeout=60, opener=None, bases=()):
     """lookup(filename) for text requests: reads <index>/simple/<project>/ (PEP 503, as GitLab, PyPI, pypiserver,
-    Artifactory and Nexus serve it) and returns the entry for that file, its sha256 from the link's #sha256=.
+    Artifactory and Nexus serve it) and returns the entry for that file, its sha256 from the link's #sha256= and its
+    requires_python from data-requires-python.
     A file the index does not list comes back with an error the allowlist reports."""
     index_url = check_index_url(index_url)
     opener = opener or web_opener(trust_context())
@@ -210,19 +224,20 @@ def index_lookup(index_url, username="", password="", timeout=60, opener=None, b
             except OSError as error:
                 raise TransferError(f"index {url}: {error}") from None
             pages[project] = {}
-            for href in links.hrefs:
+            for href, requires_python in links.hrefs:
                 target, _, fragment = urllib.parse.urljoin(url, href).partition("#")
                 target = same_origin(target, index_url, bases)
                 pages[project][urllib.parse.unquote(target.rsplit("/", 1)[-1])] = (
-                    target, fragment[len("sha256="):] if fragment.startswith("sha256=") else "")
+                    target, fragment[len("sha256="):] if fragment.startswith("sha256=") else "", requires_python)
         return pages[project]
 
     def lookup(filename):
         name, version = wheel_name_version(filename)
         if not name:
-            return {"filename": filename, "name": "", "version": "", "sha256": "", "size": "", "url": ""}
-        url, sha256 = page(re.sub(r"[-_.]+", "-", name).lower()).get(filename, ("", ""))
-        return {"filename": filename, "name": name, "version": version, "sha256": sha256, "size": "", "url": url}
+            return dict.fromkeys(FIELDS, "") | {"filename": filename}
+        url, sha256, requires_python = page(re.sub(r"[-_.]+", "-", name).lower()).get(filename, ("", "", ""))
+        return {"filename": filename, "name": name, "version": version, "sha256": sha256, "size": "", "url": url,
+                "requires_python": requires_python}
 
     return lookup
 
@@ -273,6 +288,7 @@ def fetched_attributes(attributes):
         raise TransferError(f"{attributes.get('pypi.filename')} does not match its sha256")
     return {"filename": attributes["pypi.filename"], "X-Sha256": attributes["pypi.sha256"],
             "X-Artifact-Format": package_format(attributes["pypi.filename"]),
+            "X-Requires-Python": requires_python(attributes.get("pypi.requires_python")),
             "mime.type": "application/octet-stream", "pypi.stage": "sent"}
 
 
@@ -285,7 +301,9 @@ def upload_key(secret, uuid, filename):
 def arrived_attributes(attributes, secret=None):
     """High side: a wheel from the diode may be uploaded when its labels are a wheel's and its bytes match X-Sha256.
     Name and version come from the file name, never from attributes set on the low side, and the answer of any
-    earlier request is cleared so it cannot be read as this upload's."""
+    earlier request is cleared so it cannot be read as this upload's. Requires-Python is inside the file, which Python
+    never reads, so it comes from the low side's X-Requires-Python, kept only when it is a PEP 440 specifier set of
+    at most 200 characters: anything else is dropped and the file is uploaded without it."""
     kind = package_format(attributes.get("filename") or "")
     if not kind:
         raise TransferError(f"{attributes.get('filename')!r} is not a wheel or source distribution file name")
@@ -298,6 +316,7 @@ def arrived_attributes(attributes, secret=None):
     pyversion = "source" if kind == SDIST_FORMAT else attributes["filename"][:-len(".whl")].split("-")[-3]
     stamp = {"pypi.upload.key": upload_key(secret, attributes.get("uuid") or "", attributes["filename"])} if secret else {}
     return {"pypi.stage": "upload", "pypi.name": name, "pypi.version": version, "pypi.response": "",
+            "pypi.requires_python": requires_python(attributes.get("X-Requires-Python")),
             "pypi.filetype": "sdist" if kind == SDIST_FORMAT else "bdist_wheel", "pypi.pyversion": pyversion,
             "invokehttp.status.code": "", "invokehttp.request.url": "", "invokehttp.response.url": ""} | stamp
 

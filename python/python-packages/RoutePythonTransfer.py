@@ -13,7 +13,8 @@ from python_packages import (ALREADY_THERE, WHEEL_FORMAT, TransferError, arrived
 
 ERROR, STAGE = "pypi.error", "pypi.stage"
 READ = ("pypi.filename", "pypi.url", "pypi.sha256", "filename", "X-Sha256", "X-Artifact-Type", "X-Artifact-Format",
-        "content_SHA-256", "invokehttp.request.url", "invokehttp.response.url", "invokehttp.status.code", "pypi.response", "uuid", "pypi.upload.key")
+        "content_SHA-256", "invokehttp.request.url", "invokehttp.response.url", "invokehttp.status.code", "pypi.response", "uuid", "pypi.upload.key",
+        "pypi.requires_python", "X-Requires-Python")
 
 
 @use_case(description="Low side: fetch each wheel a PlanPythonTransfer job names with native InvokeHTTP and label it for "
@@ -26,7 +27,8 @@ READ = ("pypi.filename", "pypi.url", "pypi.sha256", "filename", "X-Sha256", "X-A
                       "counting a file the index already holds as done.",
           configuration="""from the diode -> CryptographicHashContent (SHA-256) -> this processor (Transfer Side High,
           Upload URL = InvokeHTTP's HTTP URL). request -> InvokeHTTP (POST multipart, form name content, post:form:name
-          ${pypi.name}, post:form:version ${pypi.version}, post:form:sha256_digest ${content_SHA-256}, Response Body
+          ${pypi.name}, post:form:version ${pypi.version}, post:form:sha256_digest ${content_SHA-256},
+          post:form:requires_python ${pypi.requires_python}, Response Body
           Attribute Name pypi.response). InvokeHTTP Original and No Retry -> back to this processor.""",
           keywords=["python", "pypi", "wheel", "diode", "high", "upload"])
 class RoutePythonTransfer(FlowFileTransform):
@@ -44,19 +46,21 @@ class RoutePythonTransfer(FlowFileTransform):
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
 
     class ProcessorDetails:
-        version = "0.5.1"
+        version = "0.6.1"
         description = (
             "Routes Python package files around native InvokeHTTP and CryptographicHashContent; it never reads one. "
             "pypi.stage says which step a FlowFile is at. "
             "LOW IN: a job from SplitJson on PlanPythonTransfer's $.jobs. OUT request: pypi.filename, pypi.name, "
-            "pypi.version, pypi.sha256, pypi.size, pypi.url, pypi.stage fetch, for InvokeHTTP GET ${pypi.url}. "
+            "pypi.version, pypi.sha256, pypi.size, pypi.url, pypi.requires_python, pypi.stage fetch, for InvokeHTTP GET "
+            "${pypi.url}. "
             "IN again: InvokeHTTP Response after CryptographicHashContent (SHA-256). OUT success, once the bytes match "
-            "pypi.sha256: filename, X-Sha256, X-Artifact-Format whl or sdist, mime.type, pypi.stage sent. "
+            "pypi.sha256: filename, X-Sha256, X-Artifact-Format whl or sdist, X-Requires-Python, mime.type, pypi.stage sent. "
             "X-Artifact-Type, X-Artifact-Action and the X-CI-* audit headers are the webhook's, inherited through "
             "SplitJson, never set here. "
             "HIGH IN: a file from the diode after CryptographicHashContent, with filename, X-Sha256, X-Artifact-Format "
             "and an X-Artifact-Type starting python-packages. OUT request: pypi.name, pypi.version, pypi.filetype, "
-            "pypi.pyversion (from the file name, never the low side), pypi.stage upload, pypi.upload.key. IN again: "
+            "pypi.pyversion (from the file name, never the low side), pypi.requires_python (X-Requires-Python when it is a "
+            "PEP 440 specifier set, else empty), pypi.stage upload, pypi.upload.key. IN again: "
             "InvokeHTTP Original and No Retry. OUT success: pypi.result uploaded or duplicate. "
             "Any refusal goes to failure with pypi.error.")
         tags = ["python", "pypi", "wheel", "package", "route", "diode", "gitlab", "streaming"]

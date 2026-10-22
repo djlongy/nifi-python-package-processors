@@ -2,7 +2,7 @@
 
 Two NiFi 2 Python processors that move Python wheels across a data diode from one package index to another: **PlanPythonTransfer** and **RoutePythonTransfer**. They read only metadata: the small JSON request and FlowFile attributes. Native **InvokeHTTP** downloads and uploads every wheel and **CryptographicHashContent** hashes it, so a wheel's bytes never pass through Python memory, however large (a 414 MB pyspark wheel crosses like a 10 KB one).
 
-The request comes from the request job of [gitlab-pypi-mirror](https://github.com/djlongy/gitlab-pypi-mirror): one JSON POST per batch naming each wheel's filename, name, version, sha256, size and url. The processors work with any index that serves files by URL and takes the standard upload API `twine` uses: GitLab, PyPI, pypiserver, Artifactory and Nexus.
+The request comes from the request job of [gitlab-pypi-mirror](https://github.com/djlongy/gitlab-pypi-mirror): one JSON POST per batch naming each wheel's filename, name, version, sha256, size, url and, when the wheel has one, its Requires-Python. The processors work with any index that serves files by URL and takes the standard upload API `twine` uses: GitLab, PyPI, pypiserver, Artifactory and Nexus.
 
 They are plain Python with nothing outside the standard library, so anyone can read, review and change them.
 
@@ -55,15 +55,18 @@ In NiFi, right-click a processor and choose **View Documentation** (or open it f
 
 | Attribute | Set by | Meaning |
 |---|---|---|
-| `pypi.filename`, `pypi.name`, `pypi.version`, `pypi.sha256`, `pypi.size`, `pypi.url` | Route (low) | The job; InvokeHTTP fetches `${pypi.url}`, the high InvokeHTTP posts `${pypi.name}` and `${pypi.version}` |
-| `filename`, `X-Sha256`, `X-Artifact-Format` `whl` (or `sdist`), `mime.type` | Route (low, after the hash) | The labels the file crosses with. Only the file name says wheel or sdist, so Route sets the format |
+| `pypi.filename`, `pypi.name`, `pypi.version`, `pypi.sha256`, `pypi.size`, `pypi.url`, `pypi.requires_python` | Route (low) | The job; InvokeHTTP fetches `${pypi.url}`, the high InvokeHTTP posts `${pypi.name}` and `${pypi.version}` |
+| `filename`, `X-Sha256`, `X-Artifact-Format` `whl` (or `sdist`), `X-Requires-Python`, `mime.type` | Route (low, after the hash) | The labels the file crosses with. Only the file name says wheel or sdist, so Route sets the format. `X-Requires-Python` is the request's `requires_python`, or for a text request the low index's `data-requires-python`, when it is a PEP 440 specifier set of at most 200 characters, else empty: it crosses as a header, so a CR or LF never reaches it |
 | `X-Artifact-Type` `python-packages-request`, `X-Artifact-Action`, `X-CI-*`, `X-Registry` | the webhook (ListenHTTP) | Inherited through Plan and SplitJson, never set by a processor. Route on `X-Artifact-Type` matching `python-packages.*` on the high side; the high Route refuses any type not starting `python-packages` |
 | `pypi.stage` | Route | `fetch`, `sent`, `upload`: which step a FlowFile is at |
 | `pypi.upload.key` | Route (high) | An HMAC over the FlowFile's uuid and filename, keyed by Upload Secret, or when that is empty by a random secret of this Python process. An `upload` stage without it, or with one from the low side, is checked and uploaded again, so attributes carried across the diode never pass as an upload answer |
 | `pypi.result` | Route (high) | `uploaded` or `duplicate`. `duplicate` means the index already holds a file of that name; GitLab answers the same for the same bytes and for different ones, so compare the sha256 each side's simple page lists to prove the two sides match |
 | `pypi.filetype`, `pypi.pyversion` | Route (high) | Upload form fields from the file name: `bdist_wheel` and the wheel's Python tag, or `sdist` and `source` |
+| `pypi.requires_python` | Route (high) | Upload form field: `X-Requires-Python` when it is a PEP 440 specifier set of at most 200 characters, else empty. pip reads it from the index to skip versions that do not support its Python |
 | `pypi.error` | both | Why a FlowFile went to failure |
 | `pypi.job.count`, `pypi.refused.count` | Plan | Wheels in the request, and how many the allowlist refused |
+
+Requires-Python is the one upload field from the low side: it is inside the wheel, and Python never reads a wheel. The high Route drops any value that is not a specifier set, so a malformed one cannot reach the index.
 
 On the high side, `pypi.name` and `pypi.version` are read again from the wheel's file name, and `pypi.response` and `invokehttp.*` are cleared before the upload: nothing from the low side decides what is uploaded or how the answer is read. A wheel url must start with Allowed URL Base and also keep its scheme and host, with no `.` or `..` segment, no encoded dot, slash or backslash, and no query or fragment.
 
@@ -125,6 +128,7 @@ Import an intermediate CA under its own alias. RoutePythonTransfer makes no conn
 | High | Request Content-Type | `${mime.type}` |
 | High | dynamic `post:form:name`, `post:form:version`, `post:form:sha256_digest` | `${pypi.name}`, `${pypi.version}`, `${content_SHA-256}` |
 | High | dynamic `post:form::action`, `post:form:protocol_version` | `file_upload`, `1` (PyPI and pypiserver need them; GitLab ignores them) |
+| High | dynamic `post:form:requires_python` | `${pypi.requires_python}`; empty when the wheel has none, which GitLab and PyPI store as none |
 | High | dynamic `post:form:filetype`, `post:form:pyversion` | `${pypi.filetype}` (`bdist_wheel` or `sdist`), `${pypi.pyversion}` (the wheel's Python tag, or `source`); PyPI needs both, GitLab ignores them |
 | High | Response Redirects Enabled | `False`: an upload answer from anywhere but Upload URL is refused |
 | High | Response Body Attribute Name / Size | `pypi.response` / `256` |
